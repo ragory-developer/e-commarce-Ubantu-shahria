@@ -1,0 +1,28 @@
+model TaxRate {
+  id String @id @default(cuid())
+
+  taxClassId String   @map("tax_class_id")
+  taxClass   TaxClass @relation(fields: [taxClassId], references: [id])
+
+  name     String  @db.VarChar(191)
+  country  String  @db.VarChar(2)
+  state    String  @default("*") @db.VarChar(191)
+  city     String  @default("*") @db.VarChar(191)
+  zip      String  @default("*") @db.VarChar(20)
+  rate     Decimal @db.Decimal(8, 4)
+  position Int     @default(0)
+
+  translations Json? @db.JsonB
+
+  orderTaxes OrderTax[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([taxClassId])
+  @@index([country, state])
+  @@index([deletedAt])
+  @@map("tax_rates")
+}

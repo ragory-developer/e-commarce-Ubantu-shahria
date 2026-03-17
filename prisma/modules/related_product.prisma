@@ -1,0 +1,11 @@
+model RelatedProduct {
+  productId        String  @map("product_id")
+  product          Product @relation("ProductRelated", fields: [productId], references: [id], onDelete: Cascade)
+  relatedProductId String  @map("related_product_id")
+  relatedProduct   Product @relation("RelatedToProduct", fields: [relatedProductId], references: [id], onDelete: Cascade)
+  position         Int     @default(0)
+
+  @@id([productId, relatedProductId])
+  @@index([relatedProductId])
+  @@map("related_products")
+}

@@ -1,0 +1,26 @@
+model Area {
+  id String @id @default(cuid())
+
+  cityId String @map("city_id")
+  city   City   @relation(fields: [cityId], references: [id], onDelete: Cascade)
+
+  name       String  @db.VarChar(191)
+  slug       String  @unique
+  postalCode String  @map("postal_code") @db.VarChar(10)
+  isActive   Boolean @default(true) @map("is_active")
+
+  deliveryZoneId String?       @map("delivery_zone_id")
+  deliveryZone   DeliveryZone? @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
+
+  addresses Address[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([cityId, slug])
+  @@index([cityId])
+  @@index([postalCode])
+  @@index([deliveryZoneId])
+  @@index([isActive])
+  @@map("areas")
+}

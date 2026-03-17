@@ -10,18 +10,18 @@ model OrderProduct {
   productVariantId String?         @map("product_variant_id")
   productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id])
 
-  productName String  @map("product_name") @db.VarChar(191)
-  productSku  String? @map("product_sku") @db.VarChar(100)
-  productSlug String  @map("product_slug") @db.VarChar(191)
-
-  productImage Json? @map("product_image") @db.JsonB
+  // Snapshot at order time
+  productName  String  @map("product_name") @db.VarChar(191)
+  productSku   String? @map("product_sku") @db.VarChar(100)
+  productSlug  String  @map("product_slug") @db.VarChar(191)
+  productImage Json?   @map("product_image") @db.JsonB
 
   unitPrice Decimal @map("unit_price") @db.Decimal(18, 4)
   qty       Int
   lineTotal Decimal @map("line_total") @db.Decimal(18, 4)
 
-  options    OrderProductOption[]
-  variations OrderProductVariation[]
+  // Selected variations snapshot: [{ name:"Color", value:"Red", type:"COLOR" }]
+  variationsSnapshot Json? @map("variations_snapshot") @db.JsonB
 
   @@index([orderId])
   @@index([productId])

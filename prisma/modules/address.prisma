@@ -4,28 +4,31 @@ model Address {
   customerId String   @map("customer_id")
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
-  label        String? @db.VarChar(50)
-  address      String  @db.VarChar(191)
-  descriptions String  @db.Text
-  city         String  @db.VarChar(191)
-  state        String  @db.VarChar(191)
-  road         String  @db.VarChar(191)
-  zip          String  @db.VarChar(20)
-  country      String  @db.VarChar(50)
+  label       String? @db.VarChar(50)
+  fullName    String  @map("full_name") @db.VarChar(191)
+  phone       String  @db.VarChar(50)
+  addressLine String  @map("address_line") @db.Text
 
-  isDefault Boolean @default(false) @map("is_default")
+  divisionId String?   @map("division_id")
+  division   Division? @relation(fields: [divisionId], references: [id], onDelete: SetNull)
+  cityId     String?   @map("city_id")
+  city       City?     @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  areaId     String?   @map("area_id")
+  area       Area?     @relation(fields: [areaId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  createdBy String?  @map("created_by")
-  updatedBy String?  @map("updated_by")
+  postalCode String  @map("postal_code") @db.VarChar(10)
+  country    String  @default("BD") @db.VarChar(50)
+  isDefault  Boolean @default(false) @map("is_default")
 
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([customerId])
-  @@index([country])
+  @@index([areaId])
+  @@index([customerId, isDefault])
+  @@index([customerId, deletedAt])
   @@index([deletedAt])
-  @@index([createdAt])
   @@map("addresses")
 }

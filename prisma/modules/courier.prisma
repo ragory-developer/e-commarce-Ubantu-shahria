@@ -1,0 +1,29 @@
+model Courier {
+  id String @id @default(cuid())
+
+  name String @unique @db.VarChar(191)
+  slug String @unique @db.VarChar(191)
+
+  phone               String? @db.VarChar(20)
+  website             String?
+  logo                String?
+  apiKey              String? @map("api_key") @db.VarChar(255)
+  trackingUrlTemplate String? @map("tracking_url_template") @db.VarChar(500)
+  apiConfig           Json?   @map("api_config") @db.JsonB
+
+  isActive Boolean @default(true) @map("is_active")
+  position Int     @default(0)
+
+  shippingRules ShippingRule[]
+  orderPackages OrderPackage[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([slug])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("couriers")
+}

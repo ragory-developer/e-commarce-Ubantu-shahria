@@ -1,0 +1,20 @@
+model CustomerNote {
+  id String @id @default(cuid())
+
+  customerId String   @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  note      String  @db.Text
+  isPinned  Boolean @default(false) @map("is_pinned")
+  createdBy String  @map("created_by")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([customerId])
+  @@index([customerId, isPinned])
+  @@index([deletedAt])
+  @@map("customer_notes")
+}

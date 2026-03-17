@@ -1,0 +1,22 @@
+model EntityMedia {
+  id String @id @default(cuid())
+
+  entityType String @map("entity_type") @db.VarChar(50)
+  entityId   String @map("entity_id")
+
+  mediaId String @map("media_id")
+  media   Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  position Int     @default(0)
+  purpose  String? @db.VarChar(50)
+  isMain   Boolean @default(false) @map("is_main")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([entityType, entityId, mediaId])
+  @@index([entityType, entityId])
+  @@index([mediaId])
+  @@index([isMain])
+  @@map("entity_media")
+}

@@ -1,0 +1,57 @@
+model ProductVariant {
+  id String @id @default(cuid())
+
+  // uid = deterministic hash of sorted variation-value UIDs
+  // e.g. sha1("color-red|size-xl") — enables idempotent upsert
+  uid  String @unique @db.VarChar(191)
+  uids String @db.Text
+
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  name    String  @db.VarChar(191)
+  sku     String? @unique @db.VarChar(100)
+  barcode String? @db.VarChar(100)
+
+  price             Decimal?          @db.Decimal(18, 4)
+  specialPrice      Decimal?          @map("special_price") @db.Decimal(18, 4)
+  specialPriceType  SpecialPriceType? @map("special_price_type")
+  specialPriceStart DateTime?         @map("special_price_start")
+  specialPriceEnd   DateTime?         @map("special_price_end")
+
+  manageStock       Boolean? @map("manage_stock")
+  qty               Int?
+  reservedQty       Int      @default(0) @map("reserved_qty")
+  inStock           Boolean? @map("in_stock")
+  lowStockThreshold Int?     @map("low_stock_threshold")
+
+  weight Decimal? @db.Decimal(10, 2)
+  length Decimal? @db.Decimal(10, 2)
+  width  Decimal? @db.Decimal(10, 2)
+  height Decimal? @db.Decimal(10, 2)
+
+  isDefault Boolean @default(false) @map("is_default")
+  isActive  Boolean @default(true) @map("is_active")
+  position  Int     @default(0)
+
+  images Json? @db.JsonB
+
+  inventoryLogs InventoryLog[]
+  orderProducts OrderProduct[]
+  priceHistory  PriceHistory[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([productId])
+  @@index([sku])
+  @@index([barcode])
+  @@index([isActive, deletedAt])
+  @@index([productId, isDefault])
+  @@index([productId, position])
+  @@index([qty])
+  @@index([deletedAt])
+  @@map("product_variants")
+}

@@ -1,0 +1,11 @@
+model CouponCategory {
+  couponId   String   @map("coupon_id")
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  categoryId String   @map("category_id")
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  exclude    Boolean  @default(false)
+
+  @@id([couponId, categoryId])
+  @@index([categoryId])
+  @@map("coupon_categories")
+}

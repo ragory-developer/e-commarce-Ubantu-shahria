@@ -23,29 +23,32 @@ model Address {
   customerId String   @map("customer_id")
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
-  label        String? @db.VarChar(50)
-  address      String  @db.VarChar(191)
-  descriptions String  @db.Text
-  city         String  @db.VarChar(191)
-  state        String  @db.VarChar(191)
-  road         String  @db.VarChar(191)
-  zip          String  @db.VarChar(20)
-  country      String  @db.VarChar(50)
+  label       String? @db.VarChar(50)
+  fullName    String  @map("full_name") @db.VarChar(191)
+  phone       String  @db.VarChar(50)
+  addressLine String  @map("address_line") @db.Text
 
-  isDefault Boolean @default(false) @map("is_default")
+  divisionId String?   @map("division_id")
+  division   Division? @relation(fields: [divisionId], references: [id], onDelete: SetNull)
+  cityId     String?   @map("city_id")
+  city       City?     @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  areaId     String?   @map("area_id")
+  area       Area?     @relation(fields: [areaId], references: [id], onDelete: SetNull)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  createdBy String?  @map("created_by")
-  updatedBy String?  @map("updated_by")
+  postalCode String  @map("postal_code") @db.VarChar(10)
+  country    String  @default("BD") @db.VarChar(50)
+  isDefault  Boolean @default(false) @map("is_default")
 
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([customerId])
-  @@index([country])
+  @@index([areaId])
+  @@index([customerId, isDefault])
+  @@index([customerId, deletedAt])
   @@index([deletedAt])
-  @@index([createdAt])
   @@map("addresses")
 }
 
@@ -54,35 +57,32 @@ model Address {
 // MODULE:  ADMIN.PRISMA
 // ========================================
 
-// ─── Admin (Staff Only — separate from Customer) ─────────────
 model Admin {
   id String @id @default(cuid())
 
   firstName String  @map("first_name") @db.VarChar(100)
   lastName  String  @map("last_name") @db.VarChar(100)
-  email     String  @unique @db.VarChar(255)
-  phone     String? @db.VarChar(20)
+  email     String? @unique @db.VarChar(255)
+  phone     String  @db.VarChar(20)
   password  String  @db.VarChar(255)
   avatar    String?
 
   role        AdminRole         @default(ADMIN)
   permissions AdminPermission[] @default([])
 
-  // login security
   loginAttempts Int       @default(0) @map("login_attempts")
   lockedUntil   DateTime? @map("locked_until")
-
-  tokens  AuthToken[]
-  devices Device[]    @relation("AdminDevices")
 
   isActive    Boolean   @default(true) @map("is_active")
   lastLoginAt DateTime? @map("last_login_at")
   lastLoginIp String?   @map("last_login_ip") @db.VarChar(45)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  createdBy String?  @map("created_by")
+  tokens  AuthToken[]
+  devices Device[]    @relation("AdminDevices")
 
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
@@ -98,47 +98,23 @@ model Admin {
 // MODULE:  API_KEY.PRISMA
 // ========================================
 
-// ─── API Keys ────────────────────────────────────────────────
-// NEW — for external access (mobile apps, B2B partners, POS systems).
-//
-// Why?
-// - Mobile app needs API access without user session
-// - B2B partners (marketplace, ERP) need scoped API access
-// - Rate limiting per API key
-// - Revocable without affecting user accounts
-
 model ApiKey {
   id String @id @default(cuid())
 
-  userId String @map("user_id") // Owner of the API key
+  ownerId   String @map("owner_id")
+  ownerType String @map("owner_type") @db.VarChar(20)
 
-  name   String @db.VarChar(191) // "Mobile App - iOS", "ERP Integration"
-  key    String @unique @db.VarChar(500) // Hashed API key (never store plain)
-  prefix String @db.VarChar(10) // First 8 chars for identification: "fc_live_"
+  name   String @db.VarChar(191)
+  key    String @unique @db.VarChar(500)
+  prefix String @db.VarChar(10)
 
-  // Scoped permissions
-  // JSON Example (read-only product access):
-  // {
-  //   "scopes": ["products:read", "categories:read", "brands:read"],
-  //   "rateLimit": { "requests": 1000, "window": "1h" },
-  //   "allowedIps": [],
-  //   "allowedOrigins": ["https://partner-site.com"]
-  // }
-  //
-  // JSON Example (full POS access):
-  // {
-  //   "scopes": ["products:read", "orders:read", "orders:create", "inventory:read", "inventory:write"],
-  //   "rateLimit": { "requests": 5000, "window": "1h" },
-  //   "allowedIps": ["203.0.113.50"],
-  //   "allowedOrigins": []
-  // }
+  // { scopes, rateLimit, allowedIps, allowedOrigins }
   permissions Json @db.JsonB
 
   lastUsedAt DateTime? @map("last_used_at")
-  expiresAt  DateTime? @map("expires_at") // null = never expires
+  expiresAt  DateTime? @map("expires_at")
   revokedAt  DateTime? @map("revoked_at")
 
-  // ─── Soft Delete ───────────────────────
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
@@ -146,7 +122,7 @@ model ApiKey {
 
   @@index([key])
   @@index([prefix])
-  @@index([userId])
+  @@index([ownerId])
   @@index([revokedAt])
   @@index([deletedAt])
   @@map("api_keys")
@@ -154,40 +130,39 @@ model ApiKey {
 
 
 // ========================================
-// MODULE:  ATTRIBUTE_VALUE.PRISMA
+// MODULE:  AREA.PRISMA
 // ========================================
 
-model AttributeValue {
+model Area {
   id String @id @default(cuid())
 
-  attributeId String    @map("attribute_id")
-  attribute   Attribute @relation(fields: [attributeId], references: [id])
+  cityId String @map("city_id")
+  city   City   @relation(fields: [cityId], references: [id], onDelete: Cascade)
 
-  value    String @db.VarChar(191)
-  position Int    @default(0)
+  name       String  @db.VarChar(191)
+  slug       String  @unique
+  postalCode String  @map("postal_code") @db.VarChar(10)
+  isActive   Boolean @default(true) @map("is_active")
 
-  translations Json? @db.JsonB
+  deliveryZoneId String?       @map("delivery_zone_id")
+  deliveryZone   DeliveryZone? @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
 
-  productAttributeValue ProductAttributeValue[]
+  addresses Address[]
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@index([attributeId])
-  @@index([deletedAt])
-  @@index([createdAt])
-  @@map("attribute_values")
+  @@unique([cityId, slug])
+  @@index([cityId])
+  @@index([postalCode])
+  @@index([deliveryZoneId])
+  @@index([isActive])
+  @@map("areas")
 }
 
 
 // ========================================
-// MODULE:  ATTRIBUTES.PRISMA
+// MODULE:  ATTRIBUTE.PRISMA
 // ========================================
 
 model Attribute {
@@ -196,44 +171,38 @@ model Attribute {
   attributeSetId String       @map("attribute_set_id")
   attributeSet   AttributeSet @relation(fields: [attributeSetId], references: [id])
 
-  name     String        @db.VarChar(191)
-  slug     String        @db.VarChar(191)
-  type     AttributeType @default(TEXT)
-  position Int           @default(0)
-
-  translations Json? @db.JsonB
+  name         String        @db.VarChar(191)
+  slug         String        @db.VarChar(191)
+  type         AttributeType @default(TEXT)
+  translations Json?         @db.JsonB
 
   values            AttributeValue[]
   productAttributes ProductAttribute[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([attributeSetId])
   @@index([slug])
   @@index([deletedAt])
-  @@index([createdAt])
   @@map("attributes")
 }
 
 
 // ========================================
-// MODULE:  ATTRIBUTES_SET.PRISMA
+// MODULE:  ATTRIBUTE_SET.PRISMA
 // ========================================
 
 model AttributeSet {
   id String @id @default(cuid())
 
-  name String @db.VarChar(191)
-  slug String @unique @db.VarChar(191)
-
-  translations Json? @db.JsonB
+  name         String @db.VarChar(191)
+  slug         String @unique @db.VarChar(191)
+  translations Json?  @db.JsonB
 
   attributes Attribute[]
 
@@ -249,32 +218,32 @@ model AttributeSet {
 
 
 // ========================================
-// MODULE:  AUDIT_LOG.PRISMA
+// MODULE:  ATTRIBUTE_VALUE.PRISMA
 // ========================================
 
-// ─── Audit Log (decoupled — works for Admin & Customer) ──────
-model AuditLog {
+model AttributeValue {
   id String @id @default(cuid())
 
-  actorType AuthUserType // ADMIN or CUSTOMER
-  actorId   String?      @map("actor_id")
+  attributeId String    @map("attribute_id")
+  attribute   Attribute @relation(fields: [attributeId], references: [id])
 
-  action     AuditAction
-  entityType String      @map("entity_type") @db.VarChar(50)
-  entityId   String      @map("entity_id")
+  value        String  @db.VarChar(191)
+  label        String? @db.VarChar(191)
+  hexColor     String? @map("hex_color") @db.VarChar(7)
+  translations Json?   @db.JsonB
 
-  changes Json? @db.JsonB
+  productAttributeValues ProductAttributeValue[]
 
-  ipAddress String? @map("ip_address") @db.VarChar(45)
-  userAgent String? @map("user_agent") @db.VarChar(500)
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
 
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([actorType, actorId])
-  @@index([entityType, entityId])
-  @@index([action])
-  @@index([createdAt])
-  @@map("audit_logs")
+  @@index([attributeId])
+  @@index([deletedAt])
+  @@map("attribute_values")
 }
 
 
@@ -285,21 +254,19 @@ model AuditLog {
 model AuthToken {
   id String @id @default(cuid())
 
-  userType AuthUserType @map("user_type")
+  userType   AuthUserType @map("user_type")
+  adminId    String?      @map("admin_id")
+  admin      Admin?       @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  customerId String?      @map("customer_id")
+  customer   Customer?    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  deviceId   String?      @map("device_id")
+  device     Device?      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
-  adminId String? @map("admin_id")
-  admin   Admin?  @relation(fields: [adminId], references: [id], onDelete: Cascade)
-
-  customerId String?   @map("customer_id")
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
-  deviceId String? @map("device_id")
-  device   Device? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-
-  tokenHash   String @map("token_hash") @db.VarChar(255)
+  tokenHash   String @unique @map("token_hash") @db.VarChar(255)
   tokenFamily String @map("token_family") @db.VarChar(191)
 
   expiresAt DateTime @map("expires_at")
+  issuedAt  DateTime @default(now()) @map("issued_at")
 
   revoked       Boolean   @default(false)
   revokedAt     DateTime? @map("revoked_at")
@@ -307,44 +274,17 @@ model AuthToken {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([tokenHash])
-  @@index([tokenFamily])
-  @@index([userType])
   @@index([adminId])
   @@index([customerId])
   @@index([deviceId])
+  @@index([tokenFamily])
   @@index([expiresAt])
   @@index([revoked])
+  @@index([tokenHash])
+  @@index([userType, adminId, revoked])
+  @@index([userType, customerId, revoked])
+  @@index([deviceId, revoked])
   @@map("auth_tokens")
-}
-
-model VerificationOtp {
-  id String @id @default(cuid())
-
-  channel OtpChannel
-  purpose OtpPurpose
-
-  target String @db.VarChar(255)
-
-  codeHash  String   @map("code_hash") @db.VarChar(255)
-  expiresAt DateTime @map("expires_at")
-
-  attempts    Int @default(0)
-  maxAttempts Int @default(5) @map("max_attempts")
-
-  verified   Boolean   @default(false)
-  verifiedAt DateTime? @map("verified_at")
-
-  ipAddress String? @map("ip_address") @db.VarChar(45)
-  userAgent String? @map("user_agent") @db.Text
-
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([target])
-  @@index([channel, purpose])
-  @@index([expiresAt])
-  @@index([verified])
-  @@map("verification_otps")
 }
 
 
@@ -355,80 +295,25 @@ model VerificationOtp {
 model Brand {
   id String @id @default(cuid())
 
-  name        String  @db.VarChar(191)
-  slug        String  @unique @db.VarChar(191)
-  description String? @db.Text
-  image       String? @db.VarChar(500)
+  name         String  @db.VarChar(191)
+  slug         String  @unique @db.VarChar(191)
+  description  String? @db.Text
+  image        String? @db.VarChar(500)
+  translations Json?   @db.JsonB
+  seo          Json?   @db.JsonB
 
-  // i18n Translations JSON
-  // JSON Example:
-  // {
-  //   "bn": { "name": "স্যামসাং", "description": "বিশ্বস্ত ইলেকট্রনিক্স ব্র্যান্ড" },
-  //   "ar": { "name": "سامسونج", "description": "علامة تجارية إلكترونية موثوقة" },
-  //   "es": { "name": "Samsung", "description": "Marca de electrónica de confianza" }
-  // }
+  products Product[]
 
-  //! i18n translation JSON
-  translations Json? @db.JsonB
-
-  // JSON Example:
-  // {
-  //   "metaTitle": "Samsung - Official Store",
-  //   "metaDescription": "Shop Samsung products...",
-  //   "ogImage": "https://cdn.example.com/samsung-og.jpg",
-  //   "canonicalUrl": "/brands/samsung",
-  //   "translations": {
-  //     "bn": { "metaTitle": "স্যামসাং - অফিসিয়াল স্টোর" }
-  //   }
-  // }
-
-  // ! SEO
-  seo Json? @db.JsonB
-
-  product Product[]
-
-  // !soft delete
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  createdBy String?  @map("created_by")
-  updatedBy String?  @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([slug])
   @@index([deletedAt])
-  @@index([createdAt])
   @@map("brands")
-}
-
-
-// ========================================
-// MODULE:  CART.PRISMA
-// ========================================
-
-model Cart {
-  id String @id @default(cuid())
-
-  customerId String?   @map("customer_id")
-  customer   Customer? @relation(fields: [customerId], references: [id])
-  sessionId  String?   @map("session_id") @db.VarChar(191)
-  data       Json      @db.JsonB
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@index([customerId])
-  @@index([sessionId])
-  @@index([deletedAt])
-  @@index([createdAt])
-  @@map("carts")
 }
 
 
@@ -439,48 +324,136 @@ model Cart {
 model Category {
   id String @id @default(cuid())
 
-  parentId String?   @map("parent_id")
-  parent   Category? @relation("CategoryTree", fields: [parentId], references: [id])
+  parentId String?    @map("parent_id")
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
   children Category[] @relation("CategoryTree")
 
   name        String  @db.VarChar(191)
   slug        String  @unique @db.VarChar(191)
   description String? @db.Text
-  image       String? @db.VarChar(191)
+
+  image       String? @db.VarChar(500)
   icon        String? @db.VarChar(191)
+  bannerImage String? @map("banner_image") @db.VarChar(500)
 
-  // Hierarchical fields
-  position Int     @default(0)
-  depth    Int     @default(0)
-  path     String? @db.VarChar(1000) // e.g., "electronics/mobiles/smartphones"
-  pathIds  String? @map("path_ids") @db.VarChar(1000) // e.g., "id1,id2,id3" - CHANGED from Json to String
+  // Materialized path: "/electronics/phones/android"
+  path    String? @db.VarChar(1000)
+  pathIds String? @map("path_ids") @db.VarChar(1000)
+  depth   Int     @default(0)
 
-  // Add isActive field
   isActive Boolean @default(true) @map("is_active")
+  position Int     @default(0)
 
-  translations Json? @db.JsonB
-  seo          Json? @db.JsonB
+  metaTitle       String? @map("meta_title") @db.VarChar(255)
+  metaDescription String? @map("meta_description") @db.VarChar(500)
+  translations    Json?   @db.JsonB
+  seo             Json?   @db.JsonB
 
-  products         ProductCategory[]
-  couponCategories CouponCategory[]
+  products ProductCategory[]
+  coupons  CouponCategory[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  createdBy String?  @map("created_by")
-  updatedBy String?  @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([parentId])
   @@index([slug])
-  @@index([deletedAt])
-  @@index([createdAt])
-  @@index([depth])
   @@index([path])
   @@index([pathIds])
   @@index([isActive])
+  @@index([depth])
+  @@index([isActive, depth, position])
+  @@index([deletedAt])
   @@map("categories")
+}
+
+
+// ========================================
+// MODULE:  CHECKOUT_SESSION.PRISMA
+// ========================================
+
+model CheckoutSession {
+  id String @id @default(cuid())
+
+  customerId String? @map("customer_id")
+  sessionId  String? @map("session_id")
+
+  // Immutable cart snapshot at checkout moment
+  cartSnapshot Json @map("cart_snapshot") @db.JsonB
+
+  addressId       String? @map("address_id")
+  addressSnapshot Json    @map("address_snapshot") @db.JsonB
+
+  deliveryZoneId String? @map("delivery_zone_id")
+  courierId      String? @map("courier_id")
+  shippingCost   Decimal @default(0) @map("shipping_cost") @db.Decimal(18, 4)
+
+  couponId            String?             @map("coupon_id")
+  couponCode          String?             @map("coupon_code") @db.VarChar(50)
+  couponDiscountType  CouponDiscountType? @map("coupon_discount_type")
+  couponDiscountValue Decimal?            @map("coupon_discount_value") @db.Decimal(18, 4)
+
+  walletAmountUsed Decimal @default(0) @map("wallet_amount_used") @db.Decimal(18, 4)
+
+  subTotal Decimal @map("sub_total") @db.Decimal(18, 4)
+  discount Decimal @default(0) @db.Decimal(18, 4)
+  total    Decimal @db.Decimal(18, 4)
+
+  paymentMethod PaymentMethod @map("payment_method")
+
+  // bKash paymentID / SSLCommerz sessionkey
+  gatewayRef      String? @map("gateway_ref") @db.VarChar(255)
+  gatewayResponse Json?   @map("gateway_response") @db.JsonB
+
+  status    CheckoutStatus @default(PENDING)
+  expiresAt DateTime       @map("expires_at")
+
+  orderId String? @unique @map("order_id")
+
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([customerId])
+  @@index([sessionId])
+  @@index([gatewayRef])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([orderId])
+  @@map("checkout_sessions")
+}
+
+
+// ========================================
+// MODULE:  CITY.PRISMA
+// ========================================
+
+model City {
+  id String @id @default(cuid())
+
+  divisionId String   @map("division_id")
+  division   Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+
+  name     String  @db.VarChar(191)
+  slug     String  @unique
+  isActive Boolean @default(true) @map("is_active")
+
+  areas     Area[]
+  addresses Address[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([divisionId, name])
+  @@index([divisionId])
+  @@index([isActive])
+  @@index([slug])
+  @@map("cities")
 }
 
 
@@ -491,27 +464,32 @@ model Category {
 model Coupon {
   id String @id @default(cuid())
 
-  name         String             @db.VarChar(191)
-  code         String             @unique @db.VarChar(50)
-  discountType CouponDiscountType @default(PERCENT) @map("discount_type")
-  value        Decimal?           @db.Decimal(18, 4)
-  freeShipping Boolean            @default(false) @map("free_shipping")
+  name          String             @db.VarChar(191)
+  code          String             @unique @db.VarChar(50)
+  description   String?            @db.VarChar(500)
+  discountType  CouponDiscountType @default(PERCENT) @map("discount_type")
+  discountValue Decimal            @map("discount_value") @db.Decimal(12, 2)
 
-  minimumSpend Decimal? @map("minimum_spend") @db.Decimal(18, 4)
-  maximumSpend Decimal? @map("maximum_spend") @db.Decimal(18, 4)
+  freeShipping Boolean @default(false) @map("free_shipping")
 
-  usageLimitPerCoupon   Int? @map("usage_limit_per_coupon")
-  usageLimitPerCustomer Int? @map("usage_limit_per_customer")
-  used                  Int  @default(0)
+  minOrderValue Decimal? @map("min_order_value") @db.Decimal(12, 2)
+  maxOrderValue Decimal? @map("max_order_value") @db.Decimal(12, 2)
 
-  isActive  Boolean   @default(true) @map("is_active")
-  startDate DateTime? @map("start_date")
-  endDate   DateTime? @map("end_date")
+  usageLimit     Int? @map("usage_limit")
+  userUsageLimit Int? @map("user_usage_limit")
+  used           Int  @default(0)
 
-  translations Json? @db.JsonB
+  validFrom DateTime @map("valid_from")
+  validTo   DateTime @map("valid_to")
+
+  applicableToAll Boolean @default(true) @map("applicable_to_all")
+
+  isActive     Boolean @default(true) @map("is_active")
+  translations Json?   @db.JsonB
 
   products   CouponProduct[]
   categories CouponCategory[]
+  usages     CouponUsage[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -519,10 +497,33 @@ model Coupon {
   deletedBy String?   @map("deleted_by")
 
   @@index([code])
-  @@index([isActive, startDate, endDate])
+  @@index([isActive])
+  @@index([validFrom, validTo])
   @@index([deletedAt])
   @@map("coupons")
 }
+
+
+// ========================================
+// MODULE:  COUPON_CATEGORY.PRISMA
+// ========================================
+
+model CouponCategory {
+  couponId   String   @map("coupon_id")
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  categoryId String   @map("category_id")
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  exclude    Boolean  @default(false)
+
+  @@id([couponId, categoryId])
+  @@index([categoryId])
+  @@map("coupon_categories")
+}
+
+
+// ========================================
+// MODULE:  COUPON_PRODUCT.PRISMA
+// ========================================
 
 model CouponProduct {
   couponId  String  @map("coupon_id")
@@ -536,16 +537,83 @@ model CouponProduct {
   @@map("coupon_products")
 }
 
-model CouponCategory {
-  couponId   String   @map("coupon_id")
-  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
-  categoryId String   @map("category_id")
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  exclude    Boolean  @default(false)
 
-  @@id([couponId, categoryId, exclude])
-  @@index([categoryId])
-  @@map("coupon_categories")
+// ========================================
+// MODULE:  COUPON_USAGE.PRISMA
+// ========================================
+
+model CouponUsage {
+  id String @id @default(cuid())
+
+  couponId   String    @map("coupon_id")
+  coupon     Coupon    @relation(fields: [couponId], references: [id])
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  phone      String?   @db.VarChar(20)
+  orderId    String    @map("order_id")
+
+  discountApplied Decimal @map("discount_applied") @db.Decimal(18, 4)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([couponId])
+  @@index([customerId])
+  @@index([orderId])
+  @@index([couponId, customerId])
+  @@index([couponId, phone])
+  @@map("coupon_usages")
+}
+
+
+// ========================================
+// MODULE:  COURIER.PRISMA
+// ========================================
+
+model Courier {
+  id String @id @default(cuid())
+
+  name String @unique @db.VarChar(191)
+  slug String @unique @db.VarChar(191)
+
+  phone               String? @db.VarChar(20)
+  website             String?
+  logo                String?
+  apiKey              String? @map("api_key") @db.VarChar(255)
+  trackingUrlTemplate String? @map("tracking_url_template") @db.VarChar(500)
+  apiConfig           Json?   @map("api_config") @db.JsonB
+
+  isActive Boolean @default(true) @map("is_active")
+  position Int     @default(0)
+
+  shippingRules ShippingRule[]
+  orderPackages OrderPackage[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([slug])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("couriers")
+}
+
+
+// ========================================
+// MODULE:  CROSS_SELL_PRODUCT.PRISMA
+// ========================================
+
+model CrossSellProduct {
+  productId          String  @map("product_id")
+  product            Product @relation("ProductCrossSell", fields: [productId], references: [id], onDelete: Cascade)
+  crossSellProductId String  @map("cross_sell_product_id")
+  crossSellProduct   Product @relation("CrossSellToProduct", fields: [crossSellProductId], references: [id], onDelete: Cascade)
+  position           Int     @default(0)
+
+  @@id([productId, crossSellProductId])
+  @@index([crossSellProductId])
+  @@map("cross_sell_products")
 }
 
 
@@ -556,7 +624,7 @@ model CouponCategory {
 model CurrencyRate {
   id String @id @default(cuid())
 
-  currency String  @unique @db.VarChar(10) // ISO 4217: "USD", "BDT"
+  currency String  @unique @db.VarChar(10)
   rate     Decimal @db.Decimal(18, 4)
 
   createdAt DateTime  @default(now()) @map("created_at")
@@ -574,80 +642,111 @@ model CurrencyRate {
 // MODULE:  CUSTOMER.PRISMA
 // ========================================
 
-// ─── Customer (Guest + Registered in ONE table) ──────────────
-// Flow: Guest browses → OTP verify phone → Guest row created (isGuest=true)
-//       → fills name/address during checkout → order linked to this ID
-//       → later creates account (adds email+password) → isGuest=false
-//       → SAME ID, no data migration, all orders preserved!
+// ! Phone-first auth. Guests can order without a password.
+// ! isGuest=true + password=null = guest who verified phone
+// ! isGuest=false + password set = registered account
 
 model Customer {
   id String @id @default(cuid())
 
-  // Basic Info
   firstName String? @map("first_name") @db.VarChar(100)
   lastName  String? @map("last_name") @db.VarChar(100)
+  email     String? @unique @db.VarChar(255)
+  phone     String  @unique @db.VarChar(20)
+  password  String? @db.VarChar(255)
+  avatar    String?
 
-  email         String? @unique @db.VarChar(255)
   emailVerified Boolean @default(false) @map("email_verified")
-
-  phone         String  @unique @db.VarChar(20)
   phoneVerified Boolean @default(false) @map("phone_verified")
-
-  password String? @db.VarChar(255) // null for guest
-
-  avatar String?
 
   loginAttempts Int       @default(0) @map("login_attempts")
   lockedUntil   DateTime? @map("locked_until")
 
-  // Account State
-  isGuest     Boolean   @default(true) @map("is_guest")
-  isActive    Boolean   @default(true) @map("is_active")
-  // Login Info
+  isGuest  Boolean @default(true) @map("is_guest")
+  isActive Boolean @default(true) @map("is_active")
+
   lastLoginAt DateTime? @map("last_login_at")
   lastLoginIp String?   @map("last_login_ip") @db.VarChar(45)
 
-  // Soft Delete
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  tokens    AuthToken[]
-  devices   Device[]       @relation("CustomerDevices")
-  addresses Address[]
-  orders    Order[]
-  carts     Cart[]
-  reviews   Review[]
-  wishlist  WishlistItem[]
+  tokens           AuthToken[]
+  devices          Device[]          @relation("CustomerDevices")
+  addresses        Address[]
+  orders           Order[]
+  reviews          Review[]
+  wallet           Wallet?
+  checkoutSessions CheckoutSession[]
+  returns          OrderReturn[]
+  notes            CustomerNote[]
+  tags             CustomerTag[]
+  questions        ProductQuestion[]
+  couponUsages     CouponUsage[]
 
   @@index([phone])
   @@index([email])
   @@index([isGuest])
   @@index([isActive, deletedAt])
+  @@index([phone, deletedAt])
   @@map("customers")
 }
 
 
 // ========================================
-// MODULE:  DELIVERY.PRISMA
+// MODULE:  CUSTOMER_NOTE.PRISMA
 // ========================================
 
-// ─── Delivery / Package / Rider Assignment ───────────────────
-// Professional order fulfillment: package creation → rider assignment → delivery
+model CustomerNote {
+  id String @id @default(cuid())
 
-enum PackageStatus {
-  CREATED // Package record created
-  PACKED // Items physically packed
-  ASSIGNED // Rider assigned
-  PICKED_UP // Rider picked up from warehouse
-  IN_TRANSIT // On the way
-  DELIVERED // Successfully delivered
-  FAILED // Delivery attempt failed
-  RETURNED // Returned to warehouse
+  customerId String   @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  note      String  @db.Text
+  isPinned  Boolean @default(false) @map("is_pinned")
+  createdBy String  @map("created_by")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([customerId])
+  @@index([customerId, isPinned])
+  @@index([deletedAt])
+  @@map("customer_notes")
 }
+
+
+// ========================================
+// MODULE:  CUSTOMER_TAG.PRISMA
+// ========================================
+
+model CustomerTag {
+  id String @id @default(cuid())
+
+  customerId String   @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  label     String           @db.VarChar(50)
+  color     CustomerTagColor @default(GRAY)
+  createdBy String           @map("created_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([customerId, label])
+  @@index([customerId])
+  @@index([label])
+  @@map("customer_tags")
+}
+
+
+// ========================================
+// MODULE:  DELIVERY_RIDER.PRISMA
+// ========================================
 
 model DeliveryRider {
   id String @id @default(cuid())
@@ -657,15 +756,7 @@ model DeliveryRider {
   email    String? @db.VarChar(191)
   isActive Boolean @default(true) @map("is_active")
 
-  // Rider details
-  // JSON Example:
-  // {
-  //   "vehicleType": "motorcycle",
-  //   "vehiclePlate": "DH-1234",
-  //   "zone": "Dhaka North",
-  //   "maxCapacity": 10,
-  //   "profileImage": "https://cdn.example.com/riders/r001.jpg"
-  // }
+  // { vehicleType, vehiclePlate, zone, maxCapacity, profileImage }
   details Json? @db.JsonB
 
   packages OrderPackage[]
@@ -681,65 +772,31 @@ model DeliveryRider {
   @@map("delivery_riders")
 }
 
-model OrderPackage {
+
+// ========================================
+// MODULE:  DELIVERY_ZONE.PRISMA
+// ========================================
+
+model DeliveryZone {
   id String @id @default(cuid())
 
-  orderId String @map("order_id")
-  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  name String @unique @db.VarChar(191)
+  slug String @unique @db.VarChar(100)
 
-  // Rider assignment (nullable until assigned)
-  riderId String?        @map("rider_id")
-  rider   DeliveryRider? @relation(fields: [riderId], references: [id], onDelete: SetNull)
+  areas         Area[]
+  orders        Order[]
+  shippingRules ShippingRule[]
 
-  status         PackageStatus @default(CREATED)
-  trackingNumber String?       @map("tracking_number") @db.VarChar(191)
-
-  // Which items are in this package (one order can have multiple packages)
-  // JSON Example:
-  // {
-  //   "items": [
-  //     { "orderProductId": "clx_op_001", "productName": "iPhone 15", "qty": 1 },
-  //     { "orderProductId": "clx_op_002", "productName": "USB-C Cable", "qty": 2 }
-  //   ],
-  //   "weight": 0.85,
-  //   "dimensions": { "length": 30, "width": 20, "height": 10, "unit": "cm" }
-  // }
-  items Json @db.JsonB
-
-  // Timestamps for each stage
-  packedAt    DateTime? @map("packed_at") // When items were physically packed
-  packedBy    String?   @map("packed_by") // Warehouse staff ID
-  assignedAt  DateTime? @map("assigned_at") // When rider was assigned
-  assignedBy  String?   @map("assigned_by") // Admin who assigned
-  pickedUpAt  DateTime? @map("picked_up_at") // When rider picked up
-  deliveredAt DateTime? @map("delivered_at") // When customer received
-  failedAt    DateTime? @map("failed_at") // If delivery failed
-  returnedAt  DateTime? @map("returned_at") // If returned to warehouse
-
-  // Delivery proof & notes
-  // JSON Example:
-  // {
-  //   "deliveryPhoto": "https://cdn.example.com/deliveries/d001.jpg",
-  //   "signature": "https://cdn.example.com/signatures/s001.png",
-  //   "receivedBy": "John (neighbor)",
-  //   "failureReason": null,
-  //   "attempts": 1,
-  //   "notes": "Left at front door per customer request"
-  // }
-  deliveryDetails Json? @map("delivery_details") @db.JsonB
+  isActive Boolean @default(true) @map("is_active")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
-  @@index([orderId])
-  @@index([riderId])
-  @@index([status])
-  @@index([trackingNumber])
-  @@index([createdAt])
+  @@index([isActive])
   @@index([deletedAt])
-  @@map("order_packages")
+  @@map("delivery_zones")
 }
 
 
@@ -747,18 +804,14 @@ model OrderPackage {
 // MODULE:  DEVICE.PRISMA
 // ========================================
 
-// prisma/modules/device.prisma
-
 model Device {
   id String @id @default(cuid())
 
-  adminId String? @map("admin_id")
-  admin   Admin?  @relation("AdminDevices", fields: [adminId], references: [id], onDelete: Cascade)
-
-  customerId String?   @map("customer_id")
-  customer   Customer? @relation("CustomerDevices", fields: [customerId], references: [id], onDelete: Cascade)
-
-  userType AuthUserType @map("user_type")
+  userType   AuthUserType @map("user_type")
+  adminId    String?      @map("admin_id")
+  admin      Admin?       @relation("AdminDevices", fields: [adminId], references: [id], onDelete: Cascade)
+  customerId String?      @map("customer_id")
+  customer   Customer?    @relation("CustomerDevices", fields: [customerId], references: [id], onDelete: Cascade)
 
   deviceId   String  @map("device_id") @db.VarChar(191)
   deviceName String? @map("device_name") @db.VarChar(191)
@@ -768,25 +821,79 @@ model Device {
   userAgent String? @map("user_agent") @db.Text
 
   isActive     Boolean   @default(true) @map("is_active")
-  createdAt    DateTime  @default(now()) @map("created_at")
   lastActiveAt DateTime  @default(now()) @map("last_active_at")
   revokedAt    DateTime? @map("revoked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
 
   tokens AuthToken[]
 
   @@unique([adminId, deviceId])
   @@unique([customerId, deviceId])
+  @@index([adminId])
+  @@index([customerId])
   @@index([isActive])
-  @@index([revokedAt])
   @@map("devices")
 }
 
 
 // ========================================
-// MODULE:  ENUMS.PRISMA
+// MODULE:  DIVISION.PRISMA
 // ========================================
 
-// ========== Auth & Identity ==========
+model Division {
+  id String @id @default(cuid())
+
+  name     String  @db.VarChar(191)
+  slug     String  @unique
+  position Int     @default(0)
+  isActive Boolean @default(true) @map("is_active")
+
+  cities    City[]
+  addresses Address[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("divisions")
+}
+
+
+// ========================================
+// MODULE:  ENTITY_MEDIA.PRISMA
+// ========================================
+
+model EntityMedia {
+  id String @id @default(cuid())
+
+  entityType String @map("entity_type") @db.VarChar(50)
+  entityId   String @map("entity_id")
+
+  mediaId String @map("media_id")
+  media   Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  position Int     @default(0)
+  purpose  String? @db.VarChar(50)
+  isMain   Boolean @default(false) @map("is_main")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([entityType, entityId, mediaId])
+  @@index([entityType, entityId])
+  @@index([mediaId])
+  @@index([isMain])
+  @@map("entity_media")
+}
+
+
+// ========================================
+// MODULE:  ENUM.PRISMA
+// ========================================
+
 enum AdminRole {
   SUPERADMIN
   ADMIN
@@ -794,20 +901,27 @@ enum AdminRole {
 }
 
 enum AdminPermission {
-  MANAGE_USERS
-  VIEW_USERS
-  MANAGE_PRODUCTS
-  VIEW_PRODUCTS
-  MANAGE_ORDERS
-  VIEW_ORDERS
-  MANAGE_PAYMENTS
-  VIEW_PAYMENTS
-  VIEW_REPORTS
-  EXPORT_DATA
-  MANAGE_SETTINGS
-  MANAGE_COUPONS
-  MANAGE_SHIPPING
-  MANAGE_DELIVERY
+  PRODUCT_CREATE
+  PRODUCT_READ
+  PRODUCT_UPDATE
+  PRODUCT_DELETE
+  PRODUCT_BULK_EDIT
+  ORDER_READ
+  ORDER_UPDATE_STATUS
+  ORDER_CANCEL
+  ORDER_REFUND
+  INVENTORY_MANAGE
+  INVENTORY_VIEW
+  FINANCE_VIEW
+  TRANSACTION_VIEW
+  COUPON_MANAGE
+  ADMIN_CREATE
+  ADMIN_EDIT
+  ADMIN_DELETE
+  ADMIN_PERMISSIONS
+  SETTINGS_MANAGE
+  LOGS_VIEW
+  RETURN_MANAGE
 }
 
 enum AuthUserType {
@@ -828,7 +942,7 @@ enum OtpPurpose {
   REGISTER_ACCOUNT
 }
 
-// ========== Product ==========
+// ! product
 enum AttributeType {
   TEXT
   NUMBER
@@ -851,24 +965,18 @@ enum VariationType {
   DROPDOWN
 }
 
-enum PublishStatus {
-  DRAFT
-  PUBLISHED
-  SCHEDULED
-}
-
-// ========== Order & Payment ==========
+// ! order & payment
 enum OrderStatus {
   PENDING
+  CONFIRMED
   PROCESSING
-  COMPLETED
-  DECLINED
+  SHIPPED
+  DELIVERED
   CANCELED
   REFUNDED
   PARTIALLY_REFUNDED
   ON_HOLD
-  SHIPPED
-  DELIVERED
+  DECLINED
 }
 
 enum PaymentMethod {
@@ -881,26 +989,157 @@ enum PaymentMethod {
   PAYPAL
 }
 
-enum ShippingMethod {
-  FREE_SHIPPING
-  LOCAL_PICKUP
-  FLAT_RATE
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
 }
 
-// ========== Coupon ==========
+enum TransactionStatus {
+  INITIATED
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+// ! inventory
+enum InventoryReason {
+  INITIAL_STOCK
+  ORDER_PLACED
+  ORDER_RESERVED
+  ORDER_CANCELED
+  ORDER_REFUNDED
+  MANUAL_ADJUSTMENT
+  RESTOCK
+  DAMAGED
+  RETURNED
+  RESERVATION_RELEASED
+  RESERVATION_CONVERTED
+}
+
+enum ReservationStatus {
+  ACTIVE
+  CONVERTED
+  EXPIRED
+  CANCELED
+}
+
+// ! delivery & return
+enum PackageStatus {
+  CREATED
+  PACKED
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+  RETURNED
+}
+
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PICKUP_SCHEDULED
+  PICKED_UP
+  RECEIVED
+  INSPECTED
+  COMPLETED
+  CANCELED
+}
+
+enum ReturnReason {
+  WRONG_ITEM
+  DEFECTIVE_PRODUCT
+  ITEM_NOT_AS_DESCRIBED
+  CHANGED_MIND
+  DUPLICATE_ORDER
+  ARRIVED_DAMAGED
+  OTHER
+}
+
+// ! checkout
+enum CheckoutStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  CANCELED
+}
+
+// ! coupon & Discount
 enum CouponDiscountType {
   FIXED
   PERCENT
 }
 
-// ========== Tax ==========
+// ! flash sale
+enum FlashSaleStatus {
+  SCHEDULED
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+// ! promotion
+enum PromotionType {
+  CART_DISCOUNT
+  PRODUCT_DISCOUNT
+  BUY_X_GET_Y
+  FREE_SHIPPING
+  BUNDLE_DISCOUNT
+  FIRST_ORDER
+}
+
+// ! refund
+enum RefundStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REJECTED
+}
+
+enum RefundReason {
+  CUSTOMER_REQUEST
+  DEFECTIVE_PRODUCT
+  WRONG_ITEM
+  ITEM_NOT_RECEIVED
+  DUPLICATE_ORDER
+  FRAUD
+  OTHER
+}
+
+// ! shipping
+enum ShippingRuleType {
+  FLAT
+  WEIGHT_BASED
+  PRICE_BASED
+  ITEM_BASED
+}
+
+// ! tax
 enum TaxBasedOn {
   BILLING_ADDRESS
   SHIPPING_ADDRESS
   STORE_ADDRESS
 }
 
-// ========== File ==========
+// ! wallet
+enum WalletTransactionType {
+  CREDIT_CASHBACK
+  CREDIT_REFUND
+  CREDIT_ADJUSTMENT
+  CREDIT_REFERRAL
+  DEBIT_ORDER
+  DEBIT_ADJUSTMENT
+  DEBIT_EXPIRED
+}
+
+// ! media files
 enum FileStorage {
   LOCAL
   S3
@@ -908,302 +1147,7 @@ enum FileStorage {
   GCS
 }
 
-// ========== Audit ==========
-enum AuditAction {
-  CREATE
-  UPDATE
-  DELETE
-  RESTORE
-}
-
-// ========== Option ==========
-enum OptionType {
-  DROPDOWN
-  CHECKBOX
-  RADIO
-  MULTIPLE_SELECT
-  TEXT
-  TEXTAREA
-  DATE
-  TIME
-  DATE_TIME
-  FILE
-}
-
-enum OptionPriceType {
-  FIXED
-  PERCENT
-}
-
-
-// ========== Transaction ==========
-enum TransactionStatus {
-  INITIATED     // Payment flow started
-  PENDING       // Waiting for gateway response
-  COMPLETED     // Payment successful
-  FAILED        // Payment failed
-  REFUNDED      // Full refund processed
-  PARTIALLY_REFUNDED // Partial refund processed
-}
-
-
-// ========================================
-// MODULE:  FILE.PRISMA
-// ========================================
-
-model File {
-  id String @id @default(cuid())
-
-  uploadedBy String? @map("uploaded_by")
-
-  filename  String      @db.VarChar(191)
-  disk      FileStorage @default(LOCAL)
-  path      String      @db.VarChar(500)
-  url       String      @db.VarChar(500)
-  extension String      @db.VarChar(20)
-  mime      String      @db.VarChar(100)
-  size      Int
-  alt       String?     @db.VarChar(191)
-
-  variants Json? @db.JsonB
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@index([uploadedBy])
-  @@index([filename])
-  @@index([mime])
-  @@index([disk])
-  @@index([deletedAt])
-  @@index([createdAt])
-  @@map("files")
-}
-
-
-// ========================================
-// MODULE:  FLASH_SALE.PRISMA
-// ========================================
-
-model FlashSale {
-  id String @id @default(cuid())
-
-  campaignName String @map("campaign_name") @db.VarChar(191)
-
-  translations Json? @db.JsonB
-
-  products FlashSaleProduct[]
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@index([deletedAt])
-  @@index([createdAt])
-  @@map("flash_sales")
-}
-
-model FlashSaleProduct {
-  id String @id @default(cuid())
-
-  flashSaleId String    @map("flash_sale_id")
-  flashSale   FlashSale @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
-
-  productId String  @map("product_id")
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  endDate  DateTime @map("end_date")
-  price    Decimal  @db.Decimal(18, 4)
-  qty      Int
-  sold     Int      @default(0) // Atomic increment on order
-  position Int      @default(0)
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@unique([flashSaleId, productId])
-  @@index([flashSaleId])
-  @@index([productId])
-  @@index([endDate])
-  @@index([deletedAt])
-  @@index([createdAt])
-  @@map("flash_sale_products")
-}
-
-
-// ========================================
-// MODULE:  INVENTORY_LOG.PRISMA
-// ========================================
-
-// ─── Inventory Log (Append-Only Audit Trail) ─────────────────
-// Every stock change is recorded here. NEVER delete or update rows.
-// This is your single source of truth for stock movement history.
-
-enum InventoryReason {
-  INITIAL_STOCK          // Product/variant created with opening stock
-  ORDER_PLACED           // Stock deducted when order placed (COD)
-  ORDER_RESERVED         // Stock reserved for online payment
-  ORDER_CANCELED         // Stock restored on full order cancel
-  ORDER_ITEM_CANCELED    // Stock restored on partial item cancel
-  ORDER_REFUNDED         // Stock restored on refund
-  MANUAL_ADJUSTMENT      // Admin manually corrected stock
-  RESTOCK                // New stock received from supplier
-  DAMAGED                // Stock written off as damaged
-  RETURNED               // Customer return (stock restored)
-  RESERVATION_RELEASED   // Expired/failed payment reservation released
-  RESERVATION_CONVERTED  // Reservation confirmed → actual deduction
-}
-
-model InventoryLog {
-  id String @id @default(cuid())
-
-  productId        String  @map("product_id")
-  productVariantId String? @map("product_variant_id")
-  sku              String? @db.VarChar(100)
-
-  // Link to triggering order (null for manual adjustments, restocks)
-  orderId String? @map("order_id")
-
-  reason   InventoryReason
-  quantity Int               // positive = stock added, negative = stock removed
-
-  stockBefore Int @map("stock_before")
-  stockAfter  Int @map("stock_after")
-
-  // Who triggered this change
-  createdBy String? @map("created_by") // adminId, customerId, or "system"
-
-  // Extra context: { "note": "Damaged in warehouse", "batchId": "B-001" }
-  metadata Json? @db.JsonB
-
-  // IMMUTABLE — no updatedAt
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([productId])
-  @@index([productVariantId])
-  @@index([orderId])
-  @@index([reason])
-  @@index([createdBy])
-  @@index([createdAt])
-  @@map("inventory_logs")
-}
-
-
-// ========================================
-// MODULE:  MEDIA.PRISMA
-// ========================================
-
-model Media {
-  id String @id @default(cuid())
-
-  // file info
-  filename     String @db.VarChar(191)
-  originalName String @map("original_name") @db.VarChar(191)
-  mimeType     String @map("mime_Type") @db.VarChar(100)
-  size         Int
-  extension    String @db.VarChar(20)
-
-  // ! storage
-  storageDriver String @map("storage_driver") @db.VarChar(20) //local || cloudinary
-  storagePath   String @map("storage_path") @db.VarChar(500)
-  storageUrl    String @map("storage_url") @db.VarChar(500)
-
-  // Image variants (JSON)
-  // Example for local:
-  // {
-  //   "thumb": { "url": "http://localhost:3000/uploads/media/2026/02/file_thumb.jpg", "width": 150, "height": 150 },
-  //   "medium": { "url": "http://localhost:3000/uploads/media/2026/02/file_medium.jpg", "width": 600, "height": 600 },
-  //   "original": { "url": "http://localhost:3000/uploads/media/2026/02/file.jpg", "width": 1920, "height": 1080 }
-  // }
-  // Example for cloudinary:
-  // {
-  //   "thumb": { "url": "https://res.cloudinary.com/.../c_thumb,w_150,h_150/...", "width": 150, "height": 150 },
-  //   "medium": { "url": "https://res.cloudinary.com/.../c_fill,w_600,h_600/...", "width": 600, "height": 600 },
-  //   "original": { "url": "https://res.cloudinary.com/.../...", "width": 1920, "height": 1080 }
-  // }
-
-  variants Json? @db.JsonB
-
-  // ! image metadata
-  width  Int?
-  height Int?
-  alt    String? @db.VarChar(191)
-
-  // Reference tracking (how many entities use this media)
-  referenceCount Int @default(0) @map("reference_count")
-
-  // Polymorphic relations
-  entityMedia EntityMedia[]
-
-  // Timestamps
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  createdBy String?  @map("created_by")
-  updatedBy String?  @map("updated_by")
-
-  // Soft delete
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@index([storageDriver])
-  @@index([mimeType])
-  @@index([createdAt])
-  @@index([deletedAt])
-  @@index([referenceCount])
-  @@map("media")
-}
-
-// ─── EntityMedia (Polymorphic Junction) ──────────────────────
-// Links media to any entity: Product, Category, Brand, Tag, Admin, Customer
-
-model EntityMedia {
-  id String @id @default(cuid())
-
-  // Polymorphic relation
-  entityType String @map("entity_type") @db.VarChar(50) // 'Product', 'Category', 'Brand', 'Tag', 'Admin', 'Customer'
-  entityId   String @map("entity_id")
-
-  // Media
-  mediaId String @map("media_id")
-  media   Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
-
-  // Ordering & purpose
-  position Int     @default(0) // For gallery ordering
-  purpose  String? @db.VarChar(50) // 'gallery', 'thumbnail', 'icon', 'banner', 'logo', 'avatar'
-  isMain   Boolean @default(false) @map("is_main") // Mark as main/primary image
-
-  // Timestamps
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  @@unique([entityType, entityId, mediaId]) // Prevent duplicate links
-  @@index([entityType, entityId])
-  @@index([mediaId])
-  @@index([isMain])
-  @@map("entity_media")
-}
-
-
-// ========================================
-// MODULE:  NOTIFICATION.PRISMA
-// ========================================
-
+// ! notification
 enum NotificationChannel {
   EMAIL
   SMS
@@ -1219,10 +1163,191 @@ enum NotificationStatus {
   BOUNCED
 }
 
+// ! Queue
+enum QueueJobStatus {
+  QUEUED
+  ACTIVE
+  COMPLETED
+  FAILED
+  STALLED
+  DELAYED
+}
+
+// ! custom tag
+enum CustomerTagColor {
+  RED
+  AMBER
+  GREEN
+  BLUE
+  GRAY
+}
+
+
+// ========================================
+// MODULE:  FLASH_SALE.PRISMA
+// ========================================
+
+model FlashSale {
+  id String @id @default(cuid())
+
+  name          String          @db.VarChar(191)
+  description   String?         @db.Text
+  startTime     DateTime        @map("start_time")
+  endTime       DateTime        @map("end_time")
+  status        FlashSaleStatus @default(SCHEDULED)
+  discountType  String          @db.VarChar(10)
+  discountValue Decimal         @map("discount_value") @db.Decimal(12, 2)
+  translations  Json?           @db.JsonB
+  isActive      Boolean         @default(true) @map("is_active")
+
+  products FlashSaleProduct[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([status, startTime, endTime])
+  @@index([isActive, status])
+  @@index([deletedAt])
+  @@map("flash_sales")
+}
+
+
+// ========================================
+// MODULE:  FLASH_SALE_PRODUCT.PRISMA
+// ========================================
+
+model FlashSaleProduct {
+  id String @id @default(cuid())
+
+  flashSaleId      String    @map("flash_sale_id")
+  flashSale        FlashSale @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  productId        String    @map("product_id")
+  product          Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productVariantId String?   @map("product_variant_id")
+
+  price    Decimal @db.Decimal(18, 4)
+  qty      Int
+  sold     Int     @default(0)
+  reserved Int     @default(0)
+  position Int     @default(0)
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@unique([flashSaleId, productId, productVariantId])
+  @@index([flashSaleId])
+  @@index([productId])
+  @@index([productVariantId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("flash_sale_products")
+}
+
+
+// ========================================
+// MODULE:  INVENTORY_LOG.PRISMA
+// ========================================
+
+model InventoryLog {
+  id String @id @default(cuid())
+
+  productId        String          @map("product_id")
+  product          Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productVariantId String?         @map("product_variant_id")
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+
+  sku String? @db.VarChar(100)
+
+  orderId            String? @map("order_id")
+  flashSaleProductId String? @map("flash_sale_product_id")
+
+  reason InventoryReason @default(MANUAL_ADJUSTMENT)
+
+  qtyBefore Int @map("qty_before")
+  qtyChange Int @map("qty_change") // positive=add, negative=deduct
+  qtyAfter  Int @map("qty_after")
+
+  reference String? @db.VarChar(100)
+  notes     String? @db.VarChar(500)
+  changedBy String? @map("changed_by")
+  metadata  Json?   @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([productId])
+  @@index([productVariantId])
+  @@index([orderId])
+  @@index([flashSaleProductId])
+  @@index([reason])
+  @@index([productId, createdAt])
+  @@index([createdAt])
+  @@map("inventory_logs")
+}
+
+
+// ========================================
+// MODULE:  MEDIA.PRISMA
+// ========================================
+
+model Media {
+  id String @id @default(cuid())
+
+  filename     String @db.VarChar(191)
+  originalName String @map("original_name") @db.VarChar(191)
+  mimeType     String @map("mime_type") @db.VarChar(100)
+  size         Int
+  extension    String @db.VarChar(20)
+
+  storageDriver String @map("storage_driver") @db.VarChar(20)
+  storagePath   String @map("storage_path") @db.VarChar(500)
+  storageUrl    String @map("storage_url") @db.VarChar(500)
+
+  variants Json? @db.JsonB
+
+  width  Int?
+  height Int?
+  alt    String? @db.VarChar(191)
+
+  referenceCount Int @default(0) @map("reference_count")
+
+  entityMedia EntityMedia[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([storageDriver])
+  @@index([mimeType])
+  @@index([referenceCount])
+  @@index([storageDriver, deletedAt])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("media")
+}
+
+
+// ========================================
+// MODULE:  NOTIFICATION.PRISMA
+// ========================================
+
 model Notification {
   id String @id @default(cuid())
 
-  userId  String?             @map("user_id")
+  recipientId   String? @map("recipient_id")
+  recipientType String? @map("recipient_type") @db.VarChar(20)
+
   channel NotificationChannel
   status  NotificationStatus  @default(QUEUED)
   data    Json                @db.JsonB
@@ -1233,7 +1358,7 @@ model Notification {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([userId])
+  @@index([recipientId, recipientType])
   @@index([channel])
   @@index([status])
   @@index([createdAt])
@@ -1242,96 +1367,31 @@ model Notification {
 
 
 // ========================================
-// MODULE:  OPTION.PRISMA
-// ========================================
-
-model Option {
-  id String @id @default(cuid())
-
-  name       String     @db.VarChar(191)
-  type       OptionType
-  isRequired Boolean    @default(false) @map("is_required")
-  position   Int        @default(0)
-
-  translations   Json            @db.JsonB
-  values         OptionValue[]
-  productOptions ProductOption[]
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@index([deletedAt])
-  @@index([createdAt])
-  @@map("options")
-}
-
-model OptionValue {
-  id String @id @default(cuid())
-
-  optionId String @map("option_id")
-  option   Option @relation(fields: [optionId], references: [id])
-
-  label     String          @db.VarChar(191)
-  price     Decimal?        @db.Decimal(18, 4)
-  priceType OptionPriceType @default(FIXED) @map("price_type")
-  position  Int             @default(0)
-
-  translations Json @db.JsonB
-
-  orderOptionValues OrderProductOptionValue[]
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@index([optionId])
-  @@index([deletedAt])
-  @@index([createdAt])
-  @@map("option_values")
-}
-
-model ProductOption {
-  productId String  @map("product_id")
-  product   Product @relation(fields: [productId], references: [id])
-  optionId  String  @map("option_id")
-  option    Option  @relation(fields: [optionId], references: [id])
-
-  @@id([productId, optionId])
-  @@index([optionId])
-  @@map("product_options")
-}
-
-
-// ========================================
 // MODULE:  ORDER.PRISMA
 // ========================================
 
 model Order {
-  id String @id @default(cuid())
-
-  orderNumber Int @unique @default(autoincrement()) @map("order_number")
+  id          String @id @default(cuid())
+  orderNumber Int    @unique @default(autoincrement()) @map("order_number")
 
   customerId String?   @map("customer_id")
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
-  customerEmail     String  @map("customer_email") @db.VarChar(191)
-  customerPhone     String? @map("customer_phone") @db.VarChar(50)
-  customerFirstName String  @map("customer_first_name") @db.VarChar(191)
-  customerLastName  String  @map("customer_last_name") @db.VarChar(191)
+  // Customer snapshot — immutable
+  customerEmail     String @map("customer_email") @db.VarChar(191)
+  customerPhone     String @map("customer_phone") @db.VarChar(50)
+  customerFirstName String @map("customer_first_name") @db.VarChar(191)
+  customerLastName  String @map("customer_last_name") @db.VarChar(191)
 
-  billingAddress Json @map("billing_address") @db.JsonB
+  // Address snapshot — immutable JSON
   shippingAddress Json @map("shipping_address") @db.JsonB
+  billingAddress  Json @map("billing_address") @db.JsonB
+
+  deliveryZoneId String?       @map("delivery_zone_id")
+  deliveryZone   DeliveryZone? @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
+  courierId      String?       @map("courier_id")
+  courierName    String?       @map("courier_name") @db.VarChar(100)
+  trackingNumber String?       @map("tracking_number")
 
   subTotal     Decimal @map("sub_total") @db.Decimal(18, 4)
   shippingCost Decimal @default(0) @map("shipping_cost") @db.Decimal(18, 4)
@@ -1339,55 +1399,104 @@ model Order {
   taxTotal     Decimal @default(0) @map("tax_total") @db.Decimal(18, 4)
   total        Decimal @db.Decimal(18, 4)
 
-  shippingMethod    ShippingMethod? @map("shipping_method")
-  paymentMethod     PaymentMethod   @map("payment_method")
-  trackingReference String?         @map("tracking_reference") @db.Text
+  paymentMethod PaymentMethod @map("payment_method")
+  paymentStatus PaymentStatus @default(PENDING) @map("payment_status")
 
   couponId            String?             @map("coupon_id")
-  couponCode          String?             @map("coupon_code") @db.VarChar(191)
+  couponCode          String?             @map("coupon_code") @db.VarChar(50)
   couponDiscountType  CouponDiscountType? @map("coupon_discount_type")
   couponDiscountValue Decimal?            @map("coupon_discount_value") @db.Decimal(18, 4)
 
-  currency     String  @db.VarChar(10)
-  currencyRate Decimal @map("currency_rate") @db.Decimal(18, 4)
+  walletAmountUsed Decimal @default(0) @map("wallet_amount_used") @db.Decimal(18, 4)
+
+  currency     String  @default("BDT") @db.VarChar(10)
+  currencyRate Decimal @default(1) @map("currency_rate") @db.Decimal(18, 4)
 
   status OrderStatus @default(PENDING)
 
-  // Admin/customer notes
-  notes Json? @db.JsonB
-
-  locale    String  @db.VarChar(10)
+  notes     Json?   @db.JsonB
+  locale    String  @default("bn-BD") @db.VarChar(10)
   ipAddress String? @map("ip_address") @db.VarChar(45)
   userAgent String? @map("user_agent") @db.VarChar(500)
 
-  paidAt      DateTime? @map("paid_at")
+  confirmedAt DateTime? @map("confirmed_at")
   shippedAt   DateTime? @map("shipped_at")
   deliveredAt DateTime? @map("delivered_at")
   canceledAt  DateTime? @map("canceled_at")
+  refundedAt  DateTime? @map("refunded_at")
 
   products      OrderProduct[]
   taxes         OrderTax[]
   statusHistory OrderStatusHistory[]
   packages      OrderPackage[]
   transaction   Transaction?
+  returns       OrderReturn[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([customerId])
   @@index([status])
+  @@index([paymentStatus])
   @@index([orderNumber])
   @@index([paymentMethod])
   @@index([createdAt])
-  @@index([paidAt])
   @@index([deletedAt])
   @@map("orders")
+}
+
+
+// ========================================
+// MODULE:  ORDER_PACKAGE.PRISMA
+// ========================================
+
+model OrderPackage {
+  id String @id @default(cuid())
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  courierId String?  @map("courier_id")
+  courier   Courier? @relation(fields: [courierId], references: [id])
+
+  riderId String?        @map("rider_id")
+  rider   DeliveryRider? @relation(fields: [riderId], references: [id], onDelete: SetNull)
+
+  status         PackageStatus @default(CREATED)
+  trackingNumber String?       @map("tracking_number") @db.VarChar(191)
+
+  // [{ orderProductId, productName, qty, weight }]
+  items Json @db.JsonB
+
+  packedAt    DateTime? @map("packed_at")
+  packedBy    String?   @map("packed_by")
+  assignedAt  DateTime? @map("assigned_at")
+  assignedBy  String?   @map("assigned_by")
+  pickedUpAt  DateTime? @map("picked_up_at")
+  deliveredAt DateTime? @map("delivered_at")
+  failedAt    DateTime? @map("failed_at")
+  returnedAt  DateTime? @map("returned_at")
+
+  // { deliveryPhoto, signature, receivedBy, failureReason, attempts }
+  deliveryDetails Json? @map("delivery_details") @db.JsonB
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([orderId])
+  @@index([riderId])
+  @@index([courierId])
+  @@index([status])
+  @@index([trackingNumber])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("order_packages")
 }
 
 
@@ -1407,18 +1516,18 @@ model OrderProduct {
   productVariantId String?         @map("product_variant_id")
   productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id])
 
-  productName String  @map("product_name") @db.VarChar(191)
-  productSku  String? @map("product_sku") @db.VarChar(100)
-  productSlug String  @map("product_slug") @db.VarChar(191)
-
-  productImage Json? @map("product_image") @db.JsonB
+  // Snapshot at order time
+  productName  String  @map("product_name") @db.VarChar(191)
+  productSku   String? @map("product_sku") @db.VarChar(100)
+  productSlug  String  @map("product_slug") @db.VarChar(191)
+  productImage Json?   @map("product_image") @db.JsonB
 
   unitPrice Decimal @map("unit_price") @db.Decimal(18, 4)
   qty       Int
   lineTotal Decimal @map("line_total") @db.Decimal(18, 4)
 
-  options    OrderProductOption[]
-  variations OrderProductVariation[]
+  // Selected variations snapshot: [{ name:"Color", value:"Red", type:"COLOR" }]
+  variationsSnapshot Json? @map("variations_snapshot") @db.JsonB
 
   @@index([orderId])
   @@index([productId])
@@ -1427,104 +1536,76 @@ model OrderProduct {
 
 
 // ========================================
-// MODULE:  ORDER_PRODUCT_DETAILS.PRISMA
+// MODULE:  ORDER_RETURN.PRISMA
 // ========================================
 
-model OrderProductOption {
+model OrderReturn {
   id String @id @default(cuid())
 
-  orderProductId String       @map("order_product_id")
-  orderProduct   OrderProduct @relation(fields: [orderProductId], references: [id])
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id])
 
-  optionName String  @map("option_name") @db.VarChar(191)
-  value      String? @db.Text
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
-  optionValues OrderProductOptionValue[]
+  // [{ orderProductId, productName, qty, unitPrice, reason }]
+  items Json @db.JsonB
 
-  @@unique([orderProductId, optionName])
-  @@map("order_product_options")
-}
+  reason       ReturnReason
+  reasonDetail String?      @map("reason_detail") @db.VarChar(500)
 
-model OrderProductOptionValue {
-  id String @id @default(cuid())
+  // Evidence photos from customer
+  evidenceImages Json? @map("evidence_images") @db.JsonB
 
-  orderProductOptionId String             @map("order_product_option_id")
-  orderProductOption   OrderProductOption @relation(fields: [orderProductOptionId], references: [id])
+  status ReturnStatus @default(REQUESTED)
 
-  optionValueId String      @map("option_value_id")
-  optionValue   OptionValue @relation(fields: [optionValueId], references: [id])
+  reviewedBy String?   @map("reviewed_by")
+  reviewedAt DateTime? @map("reviewed_at")
+  reviewNote String?   @map("review_note") @db.VarChar(500)
 
-  label String   @db.VarChar(191)
-  price Decimal? @db.Decimal(18, 4)
+  // Separate package for return pickup by rider
+  pickupPackageId String? @map("pickup_package_id")
 
-  @@index([optionValueId])
-  @@map("order_product_option_values")
-}
+  inspectedBy    String?   @map("inspected_by")
+  inspectedAt    DateTime? @map("inspected_at")
+  inspectionNote String?   @map("inspection_note") @db.VarChar(500)
 
-model OrderProductVariation {
-  id String @id @default(cuid())
+  refundId String? @map("refund_id")
 
-  orderProductId String       @map("order_product_id")
-  orderProduct   OrderProduct @relation(fields: [orderProductId], references: [id])
+  walletCreditAmount Decimal? @map("wallet_credit_amount") @db.Decimal(18, 4)
+  refundMethod       String?  @map("refund_method") @db.VarChar(20) // GATEWAY | WALLET
 
-  variationName String        @map("variation_name") @db.VarChar(191)
-  type          VariationType
-  value         String        @db.VarChar(191)
+  completedAt DateTime? @map("completed_at")
 
-  variationValues OrderProductVariationValue[]
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
 
-  @@unique([orderProductId, variationName])
-  @@map("order_product_variations")
-}
-
-model OrderProductVariationValue {
-  orderProductVariationId String                @map("order_product_variation_id")
-  orderProductVariation   OrderProductVariation @relation(fields: [orderProductVariationId], references: [id])
-
-  variationValueId String         @map("variation_value_id")
-  variationValue   VariationValue @relation(fields: [variationValueId], references: [id])
-
-  @@id([orderProductVariationId, variationValueId])
-  @@index([variationValueId])
-  @@map("order_product_variation_values")
+  @@index([orderId])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("order_returns")
 }
 
 
 // ========================================
-// MODULE:  ORDER_STATUS_HISTORY.PRISMA
+// MODULE:  ORDER_STATUS.HISTORY.PRISMA
 // ========================================
-
-// ─── Order Status History ────────────────────────────────────
-// Tracks every status change with who/when/why.
-// Essential for: customer-facing tracking page, dispute resolution, SLA monitoring.
 
 model OrderStatusHistory {
   id String @id @default(cuid())
 
-  orderId String @map("order_id")
-  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  fromStatus OrderStatus? @map("from_status") // null for initial creation
+  orderId    String       @map("order_id")
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus? @map("from_status")
   toStatus   OrderStatus  @map("to_status")
+  note       String?      @db.VarChar(500)
+  changedBy  String?      @map("changed_by")
+  metadata   Json?        @db.JsonB
 
-  // Who changed it and why
-  // JSON Example:
-  // {
-  //   "changedBy": "admin_clx789",
-  //   "changedByRole": "ADMIN",
-  //   "reason": "Customer confirmed payment via phone",
-  //   "note": "Bank transfer receipt #TXN-456 verified"
-  // }
-  //
-  // JSON Example (system auto-change):
-  // {
-  //   "changedBy": "system",
-  //   "reason": "Payment webhook received",
-  //   "webhookLogId": "clx_wh_001"
-  // }
-  metadata Json? @db.JsonB
-
-  // IMMUTABLE
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([orderId])
@@ -1535,27 +1616,51 @@ model OrderStatusHistory {
 
 
 // ========================================
+// MODULE:  ORDER_TAX.PRISMA
+// ========================================
+
+model OrderTax {
+  id String @id @default(cuid())
+
+  orderId   String  @map("order_id")
+  order     Order   @relation(fields: [orderId], references: [id])
+  taxRateId String  @map("tax_rate_id")
+  taxRate   TaxRate @relation(fields: [taxRateId], references: [id])
+
+  amount    Decimal @db.Decimal(15, 4)
+  rateName  String  @map("rate_name") @db.VarChar(191)
+  rateValue Decimal @map("rate_value") @db.Decimal(8, 4)
+
+  @@index([orderId])
+  @@index([taxRateId])
+  @@map("order_taxes")
+}
+
+
+// ========================================
 // MODULE:  PRICE_HISTORY.PRISMA
 // ========================================
 
 model PriceHistory {
   id String @id @default(cuid())
 
-  productId        String  @map("product_id")
-  productVariantId String? @map("product_variant_id")
+  productId        String          @map("product_id")
+  product          Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productVariantId String?         @map("product_variant_id")
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
 
   previousPrice        Decimal? @map("previous_price") @db.Decimal(18, 4)
   newPrice             Decimal? @map("new_price") @db.Decimal(18, 4)
   previousSpecialPrice Decimal? @map("previous_special_price") @db.Decimal(18, 4)
   newSpecialPrice      Decimal? @map("new_special_price") @db.Decimal(18, 4)
 
-  metadata Json? @db.JsonB
-
-  createdAt DateTime @default(now()) @map("created_at")
+  changedBy String?  @map("changed_by")
+  changedAt DateTime @default(now()) @map("changed_at")
+  metadata  Json?    @db.JsonB
 
   @@index([productId])
   @@index([productVariantId])
-  @@index([createdAt])
+  @@index([changedAt])
   @@map("price_history")
 }
 
@@ -1564,13 +1669,11 @@ model PriceHistory {
 // MODULE:  PRODUCT.PRISMA
 // ========================================
 
-// ─── Product (Core Model) ────────────────────────────────────
 model Product {
   id String @id @default(cuid())
 
-  brandId String? @map("brand_id")
-  brand   Brand?  @relation(fields: [brandId], references: [id], onDelete: SetNull)
-
+  brandId    String?   @map("brand_id")
+  brand      Brand?    @relation(fields: [brandId], references: [id], onDelete: SetNull)
   taxClassId String?   @map("tax_class_id")
   taxClass   TaxClass? @relation(fields: [taxClassId], references: [id], onDelete: SetNull)
 
@@ -1580,48 +1683,49 @@ model Product {
   shortDescription String? @map("short_description") @db.Text
   sku              String? @unique @db.VarChar(100)
 
-  // Pricing
   price             Decimal?          @db.Decimal(18, 4)
   specialPrice      Decimal?          @map("special_price") @db.Decimal(18, 4)
   specialPriceType  SpecialPriceType? @map("special_price_type")
   specialPriceStart DateTime?         @map("special_price_start")
   specialPriceEnd   DateTime?         @map("special_price_end")
 
-  // Inventory
-  manageStock Boolean @default(false) @map("manage_stock")
-  qty         Int?
-  inStock     Boolean @default(true) @map("in_stock")
+  // Denormalized price range — recomputed when variants change
+  minPrice Decimal? @map("min_price") @db.Decimal(18, 4)
+  maxPrice Decimal? @map("max_price") @db.Decimal(18, 4)
 
-  // Shipping
-  weight     Decimal? @db.Decimal(10, 2)
-  dimensions Json?    @db.JsonB // { "length": 30.5, "width": 20.0, "height": 10.0, "unit": "cm" }
+  manageStock       Boolean @default(false) @map("manage_stock")
+  qty               Int?
+  inStock           Boolean @default(true) @map("in_stock")
+  lowStockThreshold Int?    @map("low_stock_threshold")
 
-  // Flags
+  weight Decimal? @db.Decimal(10, 2)
+  length String?  @db.VarChar(100)
+  width  String?  @db.VarChar(100)
+  height String?  @db.VarChar(100)
 
-  isActive Boolean @default(true) @map("is_active")
-  viewed   Int     @default(0)
+  isActive   Boolean @default(true) @map("is_active")
+  isFeatured Boolean @default(false) @map("is_featured")
+  viewed     Int     @default(0)
+
+  // Denormalized rating — recomputed on review approve/delete
+  averageRating Decimal? @map("average_rating") @db.Decimal(3, 2)
+  reviewCount   Int      @default(0) @map("review_count")
 
   newFrom DateTime? @map("new_from")
   newTo   DateTime? @map("new_to")
 
-  // Media
-  // JSON: [{ "url": "...", "alt": "...", "position": 0, "isThumbnail": true }]
   images    Json? @db.JsonB
   downloads Json? @db.JsonB
 
-  // i18n + SEO
   translations Json? @db.JsonB
   seo          Json? @db.JsonB
 
-  // Relations
   categories        ProductCategory[]
   tags              ProductTag[]
   attributes        ProductAttribute[]
-  options           ProductOption[]
   variations        ProductVariation[]
   variants          ProductVariant[]
   reviews           Review[]
-  wishlistItems     WishlistItem[]
   orderProducts     OrderProduct[]
   relatedTo         RelatedProduct[]   @relation("ProductRelated")
   relatedFrom       RelatedProduct[]   @relation("RelatedToProduct")
@@ -1631,8 +1735,10 @@ model Product {
   crossSellFrom     CrossSellProduct[] @relation("CrossSellToProduct")
   flashSaleProducts FlashSaleProduct[]
   couponProducts    CouponProduct[]
+  inventoryLogs     InventoryLog[]
+  priceHistory      PriceHistory[]
+  questions         ProductQuestion[]
 
-  // Soft Delete
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   createdBy String?   @map("created_by")
@@ -1646,51 +1752,44 @@ model Product {
   @@index([sku])
   @@index([isActive, deletedAt])
   @@index([price])
+  @@index([viewed])
+  @@index([averageRating])
+  @@index([isFeatured, isActive])
+  @@index([minPrice, maxPrice])
+  @@index([isActive, isFeatured, averageRating])
   @@index([createdAt])
   @@index([deletedAt])
   @@map("products")
 }
 
-// ─── Product Variant ─────────────────────────────────────────
-model ProductVariant {
+
+// ========================================
+// MODULE:  PRODUCT_ANSWER.PRISMA
+// ========================================
+
+model ProductAnswer {
   id String @id @default(cuid())
 
-  uid  String @unique @db.VarChar(191)
-  uids String @db.Text
+  questionId String          @map("question_id")
+  question   ProductQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
-  productId String  @map("product_id")
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  adminId    String? @map("admin_id")
+  customerId String? @map("customer_id")
 
-  name              String            @db.VarChar(191)
-  sku               String?           @unique @db.VarChar(100)
-  price             Decimal?          @db.Decimal(18, 4)
-  specialPrice      Decimal?          @map("special_price") @db.Decimal(18, 4)
-  specialPriceType  SpecialPriceType? @map("special_price_type")
-  specialPriceStart DateTime?         @map("special_price_start")
-  specialPriceEnd   DateTime?         @map("special_price_end")
-
-  manageStock Boolean? @map("manage_stock")
-  qty         Int?
-  inStock     Boolean? @map("in_stock")
-
-  isDefault Boolean @default(false) @map("is_default")
-  isActive  Boolean @default(true) @map("is_active")
-  position  Int     @default(0)
-
-  images Json? @db.JsonB
-
-  orderProducts OrderProduct[]
+  answererName String  @map("answerer_name") @db.VarChar(100)
+  answer       String  @db.Text
+  isPublished  Boolean @default(false) @map("is_published")
+  helpfulVotes Int     @default(0) @map("helpful_votes")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
-  @@index([productId])
-  @@index([sku])
-  @@index([isActive, deletedAt])
+  @@index([questionId, isPublished])
+  @@index([helpfulVotes])
   @@index([deletedAt])
-  @@map("product_variants")
+  @@map("product_answers")
 }
 
 
@@ -1701,19 +1800,23 @@ model ProductVariant {
 model ProductAttribute {
   id String @id @default(cuid())
 
-  productId String  @map("product_id")
-  product   Product @relation(fields: [productId], references: [id])
-
+  productId   String    @map("product_id")
+  product     Product   @relation(fields: [productId], references: [id])
   attributeId String    @map("attribute_id")
   attribute   Attribute @relation(fields: [attributeId], references: [id])
 
-  value ProductAttributeValue[]
+  values ProductAttributeValue[]
 
-  @@index([productId, attributeId])
+  @@unique([productId, attributeId])
   @@index([productId])
   @@index([attributeId])
   @@map("product_attributes")
 }
+
+
+// ========================================
+// MODULE:  PRODUCT_ATTRIBUTE_VALUE.PRISMA
+// ========================================
 
 model ProductAttributeValue {
   productAttributeId String           @map("product_attribute_id")
@@ -1728,101 +1831,162 @@ model ProductAttributeValue {
 
 
 // ========================================
-// MODULE:  PRODUCT_RELATIONS.PRISMA
+// MODULE:  PRODUCT_CATEGORY.PRISMA
 // ========================================
 
-// ─── Product ↔ Category (M:N) ────────────────────────────────
 model ProductCategory {
+  id String @id @default(cuid())
+
   productId  String   @map("product_id")
   product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   categoryId String   @map("category_id")
   category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
-  assignedAt DateTime @default(now()) @map("assigned_at")
+  position  Int     @default(0)
+  isPrimary Boolean @default(false) @map("is_primary")
 
-  @@id([productId, categoryId])
+  @@unique([productId, categoryId])
+  @@index([productId])
   @@index([categoryId])
+  @@index([categoryId, position])
+  @@index([categoryId, isPrimary])
   @@map("product_categories")
 }
 
-// ─── Product ↔ Tag (M:N) ─────────────────────────────────────
+
+// ========================================
+// MODULE:  PRODUCT_QUESTION.PRISMA
+// ========================================
+
+model ProductQuestion {
+  id String @id @default(cuid())
+
+  productId  String    @map("product_id")
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  askerName   String  @map("asker_name") @db.VarChar(100)
+  question    String  @db.Text
+  isPublished Boolean @default(false) @map("is_published")
+  isAnswered  Boolean @default(false) @map("is_answered")
+
+  answers ProductAnswer[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([productId, isPublished])
+  @@index([customerId])
+  @@index([isAnswered])
+  @@index([deletedAt])
+  @@map("product_questions")
+}
+
+
+// ========================================
+// MODULE:  PRODUCT_TAG.PRISMA
+// ========================================
+
 model ProductTag {
+  id String @id @default(cuid())
+
   productId String  @map("product_id")
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   tagId     String  @map("tag_id")
   tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
-  assignedAt DateTime @default(now()) @map("assigned_at")
-
-  @@id([productId, tagId])
+  @@unique([productId, tagId])
+  @@index([productId])
   @@index([tagId])
   @@map("product_tags")
 }
 
-// ─── Related Products ────────────────────────────────────────
-model RelatedProduct {
-  productId        String  @map("product_id")
-  product          Product @relation("ProductRelated", fields: [productId], references: [id], onDelete: Cascade)
-  relatedProductId String  @map("related_product_id")
-  relatedProduct   Product @relation("RelatedToProduct", fields: [relatedProductId], references: [id], onDelete: Cascade)
-  position         Int     @default(0)
 
-  @@id([productId, relatedProductId])
-  @@index([relatedProductId])
-  @@map("related_products")
+// ========================================
+// MODULE:  PRODUCT_VARIANT.PRISMA
+// ========================================
+
+model ProductVariant {
+  id String @id @default(cuid())
+
+  // uid = deterministic hash of sorted variation-value UIDs
+  // e.g. sha1("color-red|size-xl") — enables idempotent upsert
+  uid  String @unique @db.VarChar(191)
+  uids String @db.Text
+
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  name    String  @db.VarChar(191)
+  sku     String? @unique @db.VarChar(100)
+  barcode String? @db.VarChar(100)
+
+  price             Decimal?          @db.Decimal(18, 4)
+  specialPrice      Decimal?          @map("special_price") @db.Decimal(18, 4)
+  specialPriceType  SpecialPriceType? @map("special_price_type")
+  specialPriceStart DateTime?         @map("special_price_start")
+  specialPriceEnd   DateTime?         @map("special_price_end")
+
+  manageStock       Boolean? @map("manage_stock")
+  qty               Int?
+  reservedQty       Int      @default(0) @map("reserved_qty")
+  inStock           Boolean? @map("in_stock")
+  lowStockThreshold Int?     @map("low_stock_threshold")
+
+  weight Decimal? @db.Decimal(10, 2)
+  length Decimal? @db.Decimal(10, 2)
+  width  Decimal? @db.Decimal(10, 2)
+  height Decimal? @db.Decimal(10, 2)
+
+  isDefault Boolean @default(false) @map("is_default")
+  isActive  Boolean @default(true) @map("is_active")
+  position  Int     @default(0)
+
+  images Json? @db.JsonB
+
+  inventoryLogs InventoryLog[]
+  orderProducts OrderProduct[]
+  priceHistory  PriceHistory[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([productId])
+  @@index([sku])
+  @@index([barcode])
+  @@index([isActive, deletedAt])
+  @@index([productId, isDefault])
+  @@index([productId, position])
+  @@index([qty])
+  @@index([deletedAt])
+  @@map("product_variants")
 }
 
-// ─── Up-Sell Products ────────────────────────────────────��───
-model UpSellProduct {
-  productId       String  @map("product_id")
-  product         Product @relation("ProductUpSell", fields: [productId], references: [id], onDelete: Cascade)
-  upSellProductId String  @map("up_sell_product_id")
-  upSellProduct   Product @relation("UpSellToProduct", fields: [upSellProductId], references: [id], onDelete: Cascade)
-  position        Int     @default(0)
 
-  @@id([productId, upSellProductId])
-  @@index([upSellProductId])
-  @@map("up_sell_products")
-}
+// ========================================
+// MODULE:  PRODUCT_VARIATION.PRISMA
+// ========================================
 
-// ─── Cross-Sell Products ─────────────────────────────────────
-model CrossSellProduct {
-  productId          String  @map("product_id")
-  product            Product @relation("ProductCrossSell", fields: [productId], references: [id], onDelete: Cascade)
-  crossSellProductId String  @map("cross_sell_product_id")
-  crossSellProduct   Product @relation("CrossSellToProduct", fields: [crossSellProductId], references: [id], onDelete: Cascade)
-  position           Int     @default(0)
+model ProductVariation {
+  productId   String    @map("product_id")
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variationId String    @map("variation_id")
+  variation   Variation @relation(fields: [variationId], references: [id], onDelete: Cascade)
 
-  @@id([productId, crossSellProductId])
-  @@index([crossSellProductId])
-  @@map("cross_sell_products")
+  @@id([productId, variationId])
+  @@index([variationId])
+  @@map("product_variations")
 }
 
 
 // ========================================
 // MODULE:  PROMOTION.PRISMA
 // ========================================
-
-// ─── Promotions (Advanced Rule Engine) ───────────────────────
-// NEW — goes far beyond basic coupons.
-//
-// Supports:
-// - Buy X Get Y Free
-// - Bundle discounts (buy A+B+C = 15% off)
-// - Spend $100+ get free shipping
-// - First-order discount
-// - Category-wide sales
-// - Stackable vs non-stackable promotions
-// - Auto-apply (no coupon code needed)
-
-enum PromotionType {
-  CART_DISCOUNT // $ or % off entire cart
-  PRODUCT_DISCOUNT // $ or % off specific products
-  BUY_X_GET_Y // Buy 2 get 1 free
-  FREE_SHIPPING // Free shipping on conditions
-  BUNDLE_DISCOUNT // Discount when buying specific combo
-  FIRST_ORDER // First purchase discount
-}
 
 model Promotion {
   id String @id @default(cuid())
@@ -1831,65 +1995,10 @@ model Promotion {
   slug        String        @unique @db.VarChar(191)
   description String?       @db.Text
   type        PromotionType
-  isAutoApply Boolean       @default(false) @map("is_auto_apply") // No code needed
-  isStackable Boolean       @default(false) @map("is_stackable") // Can combine with other promos
-  priority    Int           @default(0) // Higher = applied first
+  isAutoApply Boolean       @default(false) @map("is_auto_apply")
+  isStackable Boolean       @default(false) @map("is_stackable")
+  priority    Int           @default(0)
 
-  // The rules engine — the heart of the promotion
-  // JSON Example (Buy 2 Get 1 Free):
-  // {
-  //   "conditions": {
-  //     "minQty": 3,
-  //     "applicableProducts": ["clx_prod_001", "clx_prod_002"],
-  //     "applicableCategories": [],
-  //     "customerGroups": [],
-  //     "minOrderTotal": null
-  //   },
-  //   "actions": {
-  //     "discountType": "FREE_ITEM",
-  //     "discountValue": 1,
-  //     "freeItemQty": 1,
-  //     "appliesTo": "cheapest",
-  //     "maxDiscountAmount": null
-  //   }
-  // }
-  //
-  // JSON Example (Spend $100 get 15% off):
-  // {
-  //   "conditions": {
-  //     "minOrderTotal": 100.00,
-  //     "applicableProducts": [],
-  //     "applicableCategories": [],
-  //     "customerGroups": [],
-  //     "excludeProducts": ["clx_prod_sale_001"],
-  //     "excludeCategories": ["clx_cat_clearance"],
-  //     "firstOrderOnly": false
-  //   },
-  //   "actions": {
-  //     "discountType": "PERCENT",
-  //     "discountValue": 15,
-  //     "maxDiscountAmount": 50.00,
-  //     "appliesTo": "order_total"
-  //   }
-  // }
-  //
-  // JSON Example (Bundle: Phone + Case + Charger = 20% off):
-  // {
-  //   "conditions": {
-  //     "requiredProducts": [
-  //       { "productId": "clx_phone", "minQty": 1 },
-  //       { "productId": "clx_case", "minQty": 1 },
-  //       { "productId": "clx_charger", "minQty": 1 }
-  //     ],
-  //     "customerGroups": []
-  //   },
-  //   "actions": {
-  //     "discountType": "PERCENT",
-  //     "discountValue": 20,
-  //     "appliesTo": "bundle_total",
-  //     "maxDiscountAmount": null
-  //   }
-  // }
   rules Json @db.JsonB
 
   isActive  Boolean   @default(true) @map("is_active")
@@ -1899,11 +2008,8 @@ model Promotion {
   usageLimit Int? @map("usage_limit")
   used       Int  @default(0)
 
-  // JSON Example:
-  // { "bn": { "name": "২টি কিনলে ১টি ফ্রি" } }
   translations Json? @db.JsonB
 
-  // ─── Soft Delete ───────────────────────
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
@@ -1923,81 +2029,29 @@ model Promotion {
 // MODULE:  QUEUE_JOB.PRISMA
 // ========================================
 
-// ─── Queue Job Log ───────────────────────────────────────────
-// NEW — tracks all background jobs (Bull/BullMQ).
-//
-// Why?
-// - "Did the order confirmation email actually send?"
-// - "Why is image processing stuck?"
-// - "How many jobs failed in the last hour?"
-// - Debug production issues without digging through logs
-//
-// NestJS Tip: Log job lifecycle events from BullMQ event listeners
-
-enum QueueJobStatus {
-  QUEUED
-  ACTIVE
-  COMPLETED
-  FAILED
-  STALLED
-  DELAYED
-}
-
 model QueueJob {
   id String @id @default(cuid())
 
-  queue  String         @db.VarChar(100) // "email", "image-processing", "stock-sync"
-  name   String         @db.VarChar(191) // "send-order-confirmation", "resize-product-image"
+  queue  String         @db.VarChar(100)
+  name   String         @db.VarChar(191)
   status QueueJobStatus @default(QUEUED)
+  data   Json           @db.JsonB
 
-  // Job payload and result
-  // JSON Example (email job):
-  // {
-  //   "payload": {
-  //     "to": "john@example.com",
-  //     "template": "order-confirmation",
-  //     "orderId": "clx_order_001"
-  //   },
-  //   "result": {
-  //     "messageId": "sg_abc123",
-  //     "statusCode": 202
-  //   },
-  //   "error": null,
-  //   "duration": 230,
-  //   "attempts": 1,
-  //   "maxAttempts": 3
-  // }
-  //
-  // JSON Example (failed image processing):
-  // {
-  //   "payload": {
-  //     "fileId": "clx_file_001",
-  //     "operations": ["resize:800x600", "webp", "thumbnail:200x200"]
-  //   },
-  //   "result": null,
-  //   "error": {
-  //     "message": "ENOMEM: not enough memory",
-  //     "stack": "Error: ENOMEM...",
-  //     "code": "ENOMEM"
-  //   },
-  //   "duration": 1520,
-  //   "attempts": 3,
-  //   "maxAttempts": 3
-  // }
-  data Json @db.JsonB
+  attempts    Int     @default(0)
+  maxAttempts Int     @default(3) @map("max_attempts")
+  error       String? @db.Text
 
   startedAt   DateTime? @map("started_at")
   completedAt DateTime? @map("completed_at")
   failedAt    DateTime? @map("failed_at")
 
-  // IMMUTABLE
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([queue])
   @@index([name])
   @@index([status])
+  @@index([queue, status])
   @@index([createdAt])
-  @@index([queue, status]) // "How many email jobs are stuck?"
   @@map("queue_jobs")
 }
 
@@ -2006,58 +2060,58 @@ model QueueJob {
 // MODULE:  REFUND.PRISMA
 // ========================================
 
-enum RefundStatus {
-  PENDING
-  PROCESSING
-  COMPLETED
-  FAILED
-  REJECTED
-}
-
-enum RefundReason {
-  CUSTOMER_REQUEST
-  DEFECTIVE_PRODUCT
-  WRONG_ITEM
-  ITEM_NOT_RECEIVED
-  DUPLICATE_ORDER
-  FRAUD
-  OTHER
-}
-
 model Refund {
   id String @id @default(cuid())
 
-  orderId       String @map("order_id")
-  transactionId String @map("transaction_id")
+  transactionId String      @map("transaction_id")
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+
+  orderId String @map("order_id")
 
   amount   Decimal      @db.Decimal(18, 4)
   currency String       @db.VarChar(10)
   status   RefundStatus @default(PENDING)
   reason   RefundReason
 
-  details Json @db.JsonB
-
+  // Line items being refunded
+  details         Json  @db.JsonB
   gatewayResponse Json? @map("gateway_response") @db.JsonB
 
   processedBy String? @map("processed_by")
 
-  processedAt DateTime? @map("processed_at")
-  completedAt DateTime? @map("completed_at")
-  rejectedAt  DateTime? @map("rejected_at")
-
-  rejectionDetails Json? @map("rejection_details") @db.JsonB
+  processedAt      DateTime? @map("processed_at")
+  completedAt      DateTime? @map("completed_at")
+  rejectedAt       DateTime? @map("rejected_at")
+  rejectionDetails Json?     @map("rejection_details") @db.JsonB
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
-  @@index([orderId])
   @@index([transactionId])
+  @@index([orderId])
   @@index([status])
   @@index([createdAt])
   @@index([deletedAt])
   @@map("refunds")
+}
+
+
+// ========================================
+// MODULE:  RELATED_PRODUCT.PRISMA
+// ========================================
+
+model RelatedProduct {
+  productId        String  @map("product_id")
+  product          Product @relation("ProductRelated", fields: [productId], references: [id], onDelete: Cascade)
+  relatedProductId String  @map("related_product_id")
+  relatedProduct   Product @relation("RelatedToProduct", fields: [relatedProductId], references: [id], onDelete: Cascade)
+  position         Int     @default(0)
+
+  @@id([productId, relatedProductId])
+  @@index([relatedProductId])
+  @@map("related_products")
 }
 
 
@@ -2070,17 +2124,15 @@ model Review {
 
   reviewerId String?   @map("reviewer_id")
   reviewer   Customer? @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
-
-  productId String  @map("product_id")
-  product   Product @relation(fields: [productId], references: [id])
+  productId  String    @map("product_id")
+  product    Product   @relation(fields: [productId], references: [id])
 
   rating       Int
   reviewerName String  @map("reviewer_name") @db.VarChar(191)
   title        String? @db.VarChar(191)
   comment      String  @db.Text
   isApproved   Boolean @default(false) @map("is_approved")
-
-  adminReply Json? @map("admin_reply") @db.JsonB
+  adminReply   Json?   @map("admin_reply") @db.JsonB
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -2100,19 +2152,15 @@ model Review {
 // ========================================
 
 model SearchTerm {
-  id String @id @default(cuid())
+  id         String   @id @default(cuid())
+  term       String   @unique @db.VarChar(191)
+  count      Int      @default(1)
+  lastUsedAt DateTime @map("last_used_at")
+  createdAt  DateTime @default(now()) @map("created_at")
 
-  term    String @unique @db.VarChar(191)
-  results Int    @default(0)
-  hits    Int    @default(0)
-
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@index([hits(sort: Desc)])
-  @@index([deletedAt])
+  @@index([term])
+  @@index([count])
+  @@index([lastUsedAt])
   @@map("search_terms")
 }
 
@@ -2125,15 +2173,11 @@ model Setting {
   id String @id @default(cuid())
 
   key   String  @unique @db.VarChar(191)
-  group String? @db.VarChar(100) // "store", "shipping", "payment", "tax"
+  group String? @db.VarChar(100)
 
-  // JSON: { "value": "FleetCart" } or { "value": true } or { "value": ["USD", "BDT"] }
-  value Json @db.JsonB
-
+  value          Json    @db.JsonB
   isTranslatable Boolean @default(false) @map("is_translatable")
-
-  // JSON: { "en": { "value": "Free Shipping" }, "bn": { "value": "ফ্রি শিপিং" } }
-  translations Json? @db.JsonB
+  translations   Json?   @db.JsonB
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -2148,60 +2192,37 @@ model Setting {
 
 
 // ========================================
-// MODULE:  SHIPPING.PRISMA
+// MODULE:  SHIPPING_RULE.PRISMA
 // ========================================
 
-enum ShippingRateType {
-  FLAT // Fixed cost per order
-  WEIGHT_BASED // Cost per kg
-  PRICE_BASED // Free above X, else Y
-  ITEM_BASED // Cost per item
-}
-
-model ShippingZone {
+model ShippingRule {
   id String @id @default(cuid())
 
-  name     String  @db.VarChar(191)
+  deliveryZoneId String       @map("delivery_zone_id")
+  deliveryZone   DeliveryZone @relation(fields: [deliveryZoneId], references: [id], onDelete: Cascade)
+  courierId      String       @map("courier_id")
+  courier        Courier      @relation(fields: [courierId], references: [id], onDelete: Cascade)
+
+  rateType  ShippingRuleType @default(FLAT) @map("rate_type")
+  baseCost  Decimal          @map("base_cost") @db.Decimal(18, 4)
+  perKgCost Decimal          @default(0) @map("per_kg_cost") @db.Decimal(18, 4)
+
+  freeShippingMinimum Decimal? @map("free_shipping_minimum") @db.Decimal(18, 4)
+  estimatedMinDays    Int      @default(1) @map("estimated_min_days")
+  estimatedMaxDays    Int      @default(3) @map("estimated_max_days")
+
   isActive Boolean @default(true) @map("is_active")
 
-  regions Json @db.JsonB
-
-  rates ShippingRate[]
-
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
 
+  @@unique([deliveryZoneId, courierId])
+  @@index([deliveryZoneId])
+  @@index([courierId])
   @@index([isActive])
   @@index([deletedAt])
-  @@map("shipping_zones")
-}
-
-model ShippingRate {
-  id String @id @default(cuid())
-
-  shippingZoneId String       @map("shipping_zone_id")
-  shippingZone   ShippingZone @relation(fields: [shippingZoneId], references: [id], onDelete: Cascade)
-
-  name String @db.VarChar(191)
-
-  type     ShippingRateType @default(FLAT)
-  cost     Decimal          @db.Decimal(18, 4)
-  isActive Boolean          @default(true) @map("is_active")
-
-  conditions Json? @db.JsonB
-
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@index([shippingZoneId])
-  @@index([type])
-  @@index([isActive])
-  @@index([deletedAt])
-  @@map("shipping_rates")
+  @@map("shipping_rules")
 }
 
 
@@ -2209,25 +2230,14 @@ model ShippingRate {
 // MODULE:  STOCK_RESERVATION.PRISMA
 // ========================================
 
-enum ReservationStatus {
-  ACTIVE      // Currently holding stock
-  CONVERTED   // Payment succeeded → stock permanently deducted
-  EXPIRED     // TTL expired → stock released by cron
-  CANCELED    // User canceled or payment failed → stock released
-}
-
 model StockReservation {
   id String @id @default(cuid())
 
-  // Who owns this reservation
-  customerId String? @map("customer_id")
-  sessionId  String? @map("session_id")
-
+  customerId       String? @map("customer_id")
+  sessionId        String? @map("session_id")
   productId        String  @map("product_id")
   productVariantId String? @map("product_variant_id")
-
-  // Link to order once created
-  orderId String? @map("order_id")
+  orderId          String? @map("order_id")
 
   qty    Int
   status ReservationStatus @default(ACTIVE)
@@ -2242,8 +2252,8 @@ model StockReservation {
 
   @@index([productId])
   @@index([productVariantId])
-  // @@index([userId])
   @@index([sessionId])
+  @@index([customerId])
   @@index([status])
   @@index([expiresAt])
   @@map("stock_reservations")
@@ -2257,25 +2267,21 @@ model StockReservation {
 model Tag {
   id String @id @default(cuid())
 
-  name String @db.VarChar(191)
-  slug String @unique @db.VarChar(191)
-
-  translations Json? @db.JsonB
+  name         String @db.VarChar(191)
+  slug         String @unique @db.VarChar(191)
+  translations Json?  @db.JsonB
 
   products ProductTag[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([slug])
   @@index([deletedAt])
-  @@index([createdAt])
   @@map("tags")
 }
 
@@ -2287,10 +2293,10 @@ model Tag {
 model TaxClass {
   id String @id @default(cuid())
 
-  name    String     @db.VarChar(191)
-  basedOn TaxBasedOn @default(SHIPPING_ADDRESS) @map("based_on")
-
-  translations Json? @db.JsonB
+  name         String     @db.VarChar(191)
+  description  String?    @db.VarChar(500)
+  basedOn      TaxBasedOn @default(SHIPPING_ADDRESS) @map("based_on")
+  translations Json?      @db.JsonB
 
   rates    TaxRate[]
   products Product[]
@@ -2303,6 +2309,11 @@ model TaxClass {
   @@index([deletedAt])
   @@map("tax_classes")
 }
+
+
+// ========================================
+// MODULE:  TAX_RATE.PRISMA
+// ========================================
 
 model TaxRate {
   id String @id @default(cuid())
@@ -2321,30 +2332,16 @@ model TaxRate {
   translations Json? @db.JsonB
 
   orderTaxes OrderTax[]
-  createdAt  DateTime   @default(now()) @map("created_at")
-  updatedAt  DateTime   @updatedAt @map("updated_at")
-  deletedAt  DateTime?  @map("deleted_at")
-  deletedBy  String?    @map("deleted_by")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
 
   @@index([taxClassId])
   @@index([country, state])
   @@index([deletedAt])
   @@map("tax_rates")
-}
-
-model OrderTax {
-  orderId   String  @map("order_id")
-  order     Order   @relation(fields: [orderId], references: [id])
-  taxRateId String  @map("tax_rate_id")
-  taxRate   TaxRate @relation(fields: [taxRateId], references: [id])
-
-  amount    Decimal @db.Decimal(15, 4)
-  rateName  String  @map("rate_name") @db.VarChar(191)
-  rateValue Decimal @map("rate_value") @db.Decimal(8, 4)
-
-  @@id([orderId, taxRateId])
-  @@index([taxRateId])
-  @@map("order_taxes")
 }
 
 
@@ -2360,32 +2357,76 @@ model Transaction {
 
   transactionId String        @map("transaction_id") @db.VarChar(191)
   paymentMethod PaymentMethod @map("payment_method")
-  status        TransactionStatus @default(INITIATED)
+  paymentStatus PaymentStatus @map("payment_status")
   amount        Decimal       @db.Decimal(18, 4)
   currency      String        @db.VarChar(10)
+  reference     String?       @db.VarChar(255)
 
   gatewayResponse Json? @map("gateway_response") @db.JsonB
-  refunds         Json? @db.JsonB
 
   paidAt     DateTime? @map("paid_at")
   failedAt   DateTime? @map("failed_at")
   refundedAt DateTime? @map("refunded_at")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  refunds Refund[]
 
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([transactionId])
   @@index([paymentMethod])
-  @@index([status])
+  @@index([paymentStatus])
   @@index([deletedAt])
   @@index([createdAt])
   @@map("transactions")
+}
+
+
+// ========================================
+// MODULE:  UP_SELL_PRODUCT.PRISMA
+// ========================================
+
+model UpSellProduct {
+  productId       String  @map("product_id")
+  product         Product @relation("ProductUpSell", fields: [productId], references: [id], onDelete: Cascade)
+  upSellProductId String  @map("up_sell_product_id")
+  upSellProduct   Product @relation("UpSellToProduct", fields: [upSellProductId], references: [id], onDelete: Cascade)
+  position        Int     @default(0)
+
+  @@id([productId, upSellProductId])
+  @@index([upSellProductId])
+  @@map("up_sell_products")
+}
+
+
+// ========================================
+// MODULE:  URL_REDIRECT.PRISMA
+// ========================================
+
+model UrlRedirect {
+  id String @id @default(cuid())
+
+  fromPath   String  @unique @map("from_path") @db.VarChar(500)
+  toPath     String  @map("to_path") @db.VarChar(500)
+  statusCode Int     @default(301) @map("status_code")
+  entityType String? @map("entity_type") @db.VarChar(50)
+  entityId   String? @map("entity_id")
+
+  isActive  Boolean   @default(true) @map("is_active")
+  hitCount  Int       @default(0) @map("hit_count")
+  lastHitAt DateTime? @map("last_hit_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([fromPath])
+  @@index([entityType, entityId])
+  @@index([isActive])
+  @@map("url_redirects")
 }
 
 
@@ -2396,88 +2437,145 @@ model Transaction {
 model Variation {
   id String @id @default(cuid())
 
-  uid      String        @unique @db.VarChar(191)
-  name     String        @db.VarChar(191)
-  type     VariationType @default(TEXT)
-  isGlobal Boolean       @default(true) @map("is_global")
-  position Int           @default(0)
-
-  translations Json? @db.JsonB
+  uid          String        @unique @db.VarChar(191)
+  name         String        @db.VarChar(191)
+  type         VariationType @default(TEXT)
+  isGlobal     Boolean       @default(true) @map("is_global")
+  translations Json?         @db.JsonB
 
   values            VariationValue[]
   productVariations ProductVariation[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
+  @@index([uid])
   @@index([deletedAt])
-  @@index([createdAt])
   @@map("variations")
 }
+
+
+// ========================================
+// MODULE:  VARIATION_VALUE.PRISMA
+// ========================================
 
 model VariationValue {
   id String @id @default(cuid())
 
-  uid String @unique @db.VarChar(191)
-
+  uid         String    @unique @db.VarChar(191)
   variationId String    @map("variation_id")
   variation   Variation @relation(fields: [variationId], references: [id])
 
-  label    String  @db.VarChar(191)
-  value    String? @db.VarChar(191)
-  position Int     @default(0)
+  label        String  @db.VarChar(191)
+  value        String? @db.VarChar(191)
+  position     Int     @default(0)
+  translations Json?   @db.JsonB
 
-  translations Json? @db.JsonB
-
-  orderVariationValues OrderProductVariationValue[]
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([variationId])
   @@index([deletedAt])
-  @@index([createdAt])
   @@map("variation_values")
 }
 
-model ProductVariation {
-  productId String  @map("product_id")
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  variationId String    @map("variation_id")
-  variation   Variation @relation(fields: [variationId], references: [id], onDelete: Cascade)
+// ========================================
+// MODULE:  VERIFICATION_OTP.PRISMA
+// ========================================
 
-  @@id([productId, variationId])
-  @@index([variationId])
-  @@map("product_variations")
+model VerificationOtp {
+  id String @id @default(cuid())
+
+  channel OtpChannel
+  purpose OtpPurpose
+  target  String     @db.VarChar(255)
+
+  codeHash  String   @map("code_hash") @db.VarChar(255)
+  expiresAt DateTime @map("expires_at")
+
+  attempts    Int @default(0)
+  maxAttempts Int @default(5) @map("max_attempts")
+
+  verified   Boolean   @default(false)
+  verifiedAt DateTime? @map("verified_at")
+
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([target])
+  @@index([channel, purpose])
+  @@index([expiresAt])
+  @@index([verified])
+  @@index([target, purpose, verified, expiresAt])
+  @@map("verification_otps")
 }
 
 
 // ========================================
-// MODULE:  WISHLIST.PRISMA
+// MODULE:  WALLET.PRISMA
 // ========================================
 
-model WishlistItem {
-  customerId String   @map("customer_id")
-  customer   Customer @relation(fields: [customerId], references: [id])
-  productId  String   @map("product_id")
-  product    Product  @relation(fields: [productId], references: [id])
+model Wallet {
+  id String @id @default(cuid())
+
+  customerId String   @unique @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  // Cached balance — recompute from transactions for integrity check
+  balance  Decimal @default(0) @db.Decimal(18, 4)
+  currency String  @default("BDT") @db.VarChar(10)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  transactions WalletTransaction[]
 
   createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@id([customerId, productId])
-  @@index([productId])
-  @@map("wish_lists")
+  @@index([customerId])
+  @@map("wallets")
+}
+
+
+// ========================================
+// MODULE:  WALLET_TRANSACTION.PRISMA
+// ========================================
+
+model WalletTransaction {
+  id String @id @default(cuid())
+
+  walletId String @map("wallet_id")
+  wallet   Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  type WalletTransactionType
+
+  amount  Decimal @db.Decimal(18, 4) // positive=credit, negative=debit
+  balance Decimal @db.Decimal(18, 4) // running balance AFTER this transaction
+
+  orderId     String? @map("order_id")
+  returnId    String? @map("return_id")
+  referenceId String? @map("reference_id")
+
+  description String?   @db.VarChar(255)
+  expiresAt   DateTime? @map("expires_at")
+
+  createdBy String?  @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([walletId])
+  @@index([type])
+  @@index([orderId])
+  @@index([walletId, createdAt])
+  @@map("wallet_transactions")
 }

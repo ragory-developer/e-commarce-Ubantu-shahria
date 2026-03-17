@@ -3,17 +3,15 @@ model Review {
 
   reviewerId String?   @map("reviewer_id")
   reviewer   Customer? @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
-
-  productId String  @map("product_id")
-  product   Product @relation(fields: [productId], references: [id])
+  productId  String    @map("product_id")
+  product    Product   @relation(fields: [productId], references: [id])
 
   rating       Int
   reviewerName String  @map("reviewer_name") @db.VarChar(191)
   title        String? @db.VarChar(191)
   comment      String  @db.Text
   isApproved   Boolean @default(false) @map("is_approved")
-
-  adminReply Json? @map("admin_reply") @db.JsonB
+  adminReply   Json?   @map("admin_reply") @db.JsonB
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")

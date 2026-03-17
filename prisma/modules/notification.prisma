@@ -1,22 +1,9 @@
-enum NotificationChannel {
-  EMAIL
-  SMS
-  PUSH
-  WEBHOOK
-}
-
-enum NotificationStatus {
-  QUEUED
-  SENT
-  DELIVERED
-  FAILED
-  BOUNCED
-}
-
 model Notification {
   id String @id @default(cuid())
 
-  userId  String?             @map("user_id")
+  recipientId   String? @map("recipient_id")
+  recipientType String? @map("recipient_type") @db.VarChar(20)
+
   channel NotificationChannel
   status  NotificationStatus  @default(QUEUED)
   data    Json                @db.JsonB
@@ -27,7 +14,7 @@ model Notification {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  @@index([userId])
+  @@index([recipientId, recipientType])
   @@index([channel])
   @@index([status])
   @@index([createdAt])

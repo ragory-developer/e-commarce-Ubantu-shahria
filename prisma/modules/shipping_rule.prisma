@@ -1,0 +1,29 @@
+model ShippingRule {
+  id String @id @default(cuid())
+
+  deliveryZoneId String       @map("delivery_zone_id")
+  deliveryZone   DeliveryZone @relation(fields: [deliveryZoneId], references: [id], onDelete: Cascade)
+  courierId      String       @map("courier_id")
+  courier        Courier      @relation(fields: [courierId], references: [id], onDelete: Cascade)
+
+  rateType  ShippingRuleType @default(FLAT) @map("rate_type")
+  baseCost  Decimal          @map("base_cost") @db.Decimal(18, 4)
+  perKgCost Decimal          @default(0) @map("per_kg_cost") @db.Decimal(18, 4)
+
+  freeShippingMinimum Decimal? @map("free_shipping_minimum") @db.Decimal(18, 4)
+  estimatedMinDays    Int      @default(1) @map("estimated_min_days")
+  estimatedMaxDays    Int      @default(3) @map("estimated_max_days")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@unique([deliveryZoneId, courierId])
+  @@index([deliveryZoneId])
+  @@index([courierId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("shipping_rules")
+}

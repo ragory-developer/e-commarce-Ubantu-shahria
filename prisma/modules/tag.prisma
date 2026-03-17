@@ -1,24 +1,20 @@
 model Tag {
   id String @id @default(cuid())
 
-  name String @db.VarChar(191)
-  slug String @unique @db.VarChar(191)
-
-  translations Json? @db.JsonB
+  name         String @db.VarChar(191)
+  slug         String @unique @db.VarChar(191)
+  translations Json?  @db.JsonB
 
   products ProductTag[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([slug])
   @@index([deletedAt])
-  @@index([createdAt])
   @@map("tags")
 }

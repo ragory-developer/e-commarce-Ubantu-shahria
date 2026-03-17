@@ -1,49 +1,23 @@
 model Brand {
   id String @id @default(cuid())
 
-  name        String  @db.VarChar(191)
-  slug        String  @unique @db.VarChar(191)
-  description String? @db.Text
-  image       String? @db.VarChar(500)
+  name         String  @db.VarChar(191)
+  slug         String  @unique @db.VarChar(191)
+  description  String? @db.Text
+  image        String? @db.VarChar(500)
+  translations Json?   @db.JsonB
+  seo          Json?   @db.JsonB
 
-  // i18n Translations JSON
-  // JSON Example:
-  // {
-  //   "bn": { "name": "স্যামসাং", "description": "বিশ্বস্ত ইলেকট্রনিক্স ব্র্যান্ড" },
-  //   "ar": { "name": "سامسونج", "description": "علامة تجارية إلكترونية موثوقة" },
-  //   "es": { "name": "Samsung", "description": "Marca de electrónica de confianza" }
-  // }
+  products Product[]
 
-  //! i18n translation JSON
-  translations Json? @db.JsonB
-
-  // JSON Example:
-  // {
-  //   "metaTitle": "Samsung - Official Store",
-  //   "metaDescription": "Shop Samsung products...",
-  //   "ogImage": "https://cdn.example.com/samsung-og.jpg",
-  //   "canonicalUrl": "/brands/samsung",
-  //   "translations": {
-  //     "bn": { "metaTitle": "স্যামসাং - অফিসিয়াল স্টোর" }
-  //   }
-  // }
-
-  // ! SEO
-  seo Json? @db.JsonB
-
-  product Product[]
-
-  // !soft delete
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  createdBy String?  @map("created_by")
-  updatedBy String?  @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([slug])
   @@index([deletedAt])
-  @@index([createdAt])
   @@map("brands")
 }

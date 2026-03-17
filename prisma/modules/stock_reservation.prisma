@@ -1,22 +1,11 @@
-enum ReservationStatus {
-  ACTIVE      // Currently holding stock
-  CONVERTED   // Payment succeeded → stock permanently deducted
-  EXPIRED     // TTL expired → stock released by cron
-  CANCELED    // User canceled or payment failed → stock released
-}
-
 model StockReservation {
   id String @id @default(cuid())
 
-  // Who owns this reservation
-  customerId String? @map("customer_id")
-  sessionId  String? @map("session_id")
-
+  customerId       String? @map("customer_id")
+  sessionId        String? @map("session_id")
   productId        String  @map("product_id")
   productVariantId String? @map("product_variant_id")
-
-  // Link to order once created
-  orderId String? @map("order_id")
+  orderId          String? @map("order_id")
 
   qty    Int
   status ReservationStatus @default(ACTIVE)
@@ -31,8 +20,8 @@ model StockReservation {
 
   @@index([productId])
   @@index([productVariantId])
-  // @@index([userId])
   @@index([sessionId])
+  @@index([customerId])
   @@index([status])
   @@index([expiresAt])
   @@map("stock_reservations")

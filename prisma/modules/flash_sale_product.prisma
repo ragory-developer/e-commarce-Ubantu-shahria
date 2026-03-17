@@ -1,0 +1,31 @@
+model FlashSaleProduct {
+  id String @id @default(cuid())
+
+  flashSaleId      String    @map("flash_sale_id")
+  flashSale        FlashSale @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  productId        String    @map("product_id")
+  product          Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productVariantId String?   @map("product_variant_id")
+
+  price    Decimal @db.Decimal(18, 4)
+  qty      Int
+  sold     Int     @default(0)
+  reserved Int     @default(0)
+  position Int     @default(0)
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@unique([flashSaleId, productId, productVariantId])
+  @@index([flashSaleId])
+  @@index([productId])
+  @@index([productVariantId])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("flash_sale_products")
+}

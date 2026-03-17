@@ -1,0 +1,50 @@
+model OrderReturn {
+  id String @id @default(cuid())
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id])
+
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  // [{ orderProductId, productName, qty, unitPrice, reason }]
+  items Json @db.JsonB
+
+  reason       ReturnReason
+  reasonDetail String?      @map("reason_detail") @db.VarChar(500)
+
+  // Evidence photos from customer
+  evidenceImages Json? @map("evidence_images") @db.JsonB
+
+  status ReturnStatus @default(REQUESTED)
+
+  reviewedBy String?   @map("reviewed_by")
+  reviewedAt DateTime? @map("reviewed_at")
+  reviewNote String?   @map("review_note") @db.VarChar(500)
+
+  // Separate package for return pickup by rider
+  pickupPackageId String? @map("pickup_package_id")
+
+  inspectedBy    String?   @map("inspected_by")
+  inspectedAt    DateTime? @map("inspected_at")
+  inspectionNote String?   @map("inspection_note") @db.VarChar(500)
+
+  refundId String? @map("refund_id")
+
+  walletCreditAmount Decimal? @map("wallet_credit_amount") @db.Decimal(18, 4)
+  refundMethod       String?  @map("refund_method") @db.VarChar(20) // GATEWAY | WALLET
+
+  completedAt DateTime? @map("completed_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([orderId])
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("order_returns")
+}

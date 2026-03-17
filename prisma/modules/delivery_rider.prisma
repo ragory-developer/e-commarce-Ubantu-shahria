@@ -1,0 +1,23 @@
+model DeliveryRider {
+  id String @id @default(cuid())
+
+  name     String  @db.VarChar(191)
+  phone    String  @unique @db.VarChar(50)
+  email    String? @db.VarChar(191)
+  isActive Boolean @default(true) @map("is_active")
+
+  // { vehicleType, vehiclePlate, zone, maxCapacity, profileImage }
+  details Json? @db.JsonB
+
+  packages OrderPackage[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([phone])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("delivery_riders")
+}

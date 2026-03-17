@@ -1,52 +1,35 @@
-// ─── Inventory Log (Append-Only Audit Trail) ─────────────────
-// Every stock change is recorded here. NEVER delete or update rows.
-// This is your single source of truth for stock movement history.
-
-enum InventoryReason {
-  INITIAL_STOCK          // Product/variant created with opening stock
-  ORDER_PLACED           // Stock deducted when order placed (COD)
-  ORDER_RESERVED         // Stock reserved for online payment
-  ORDER_CANCELED         // Stock restored on full order cancel
-  ORDER_ITEM_CANCELED    // Stock restored on partial item cancel
-  ORDER_REFUNDED         // Stock restored on refund
-  MANUAL_ADJUSTMENT      // Admin manually corrected stock
-  RESTOCK                // New stock received from supplier
-  DAMAGED                // Stock written off as damaged
-  RETURNED               // Customer return (stock restored)
-  RESERVATION_RELEASED   // Expired/failed payment reservation released
-  RESERVATION_CONVERTED  // Reservation confirmed → actual deduction
-}
-
 model InventoryLog {
   id String @id @default(cuid())
 
-  productId        String  @map("product_id")
-  productVariantId String? @map("product_variant_id")
-  sku              String? @db.VarChar(100)
+  productId        String          @map("product_id")
+  product          Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productVariantId String?         @map("product_variant_id")
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
 
-  // Link to triggering order (null for manual adjustments, restocks)
-  orderId String? @map("order_id")
+  sku String? @db.VarChar(100)
 
-  reason   InventoryReason
-  quantity Int               // positive = stock added, negative = stock removed
+  orderId            String? @map("order_id")
+  flashSaleProductId String? @map("flash_sale_product_id")
 
-  stockBefore Int @map("stock_before")
-  stockAfter  Int @map("stock_after")
+  reason InventoryReason @default(MANUAL_ADJUSTMENT)
 
-  // Who triggered this change
-  createdBy String? @map("created_by") // adminId, customerId, or "system"
+  qtyBefore Int @map("qty_before")
+  qtyChange Int @map("qty_change") // positive=add, negative=deduct
+  qtyAfter  Int @map("qty_after")
 
-  // Extra context: { "note": "Damaged in warehouse", "batchId": "B-001" }
-  metadata Json? @db.JsonB
+  reference String? @db.VarChar(100)
+  notes     String? @db.VarChar(500)
+  changedBy String? @map("changed_by")
+  metadata  Json?   @db.JsonB
 
-  // IMMUTABLE — no updatedAt
   createdAt DateTime @default(now()) @map("created_at")
 
   @@index([productId])
   @@index([productVariantId])
   @@index([orderId])
+  @@index([flashSaleProductId])
   @@index([reason])
-  @@index([createdBy])
+  @@index([productId, createdAt])
   @@index([createdAt])
   @@map("inventory_logs")
 }

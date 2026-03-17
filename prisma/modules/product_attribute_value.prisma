@@ -1,0 +1,10 @@
+model ProductAttributeValue {
+  productAttributeId String           @map("product_attribute_id")
+  productAttribute   ProductAttribute @relation(fields: [productAttributeId], references: [id])
+  attributeValueId   String           @map("attribute_value_id")
+  attributeValue     AttributeValue   @relation(fields: [attributeValueId], references: [id])
+
+  @@id([productAttributeId, attributeValueId])
+  @@index([attributeValueId])
+  @@map("product_attribute_values")
+}

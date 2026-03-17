@@ -1,0 +1,18 @@
+model OrderStatusHistory {
+  id String @id @default(cuid())
+
+  orderId    String       @map("order_id")
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus? @map("from_status")
+  toStatus   OrderStatus  @map("to_status")
+  note       String?      @db.VarChar(500)
+  changedBy  String?      @map("changed_by")
+  metadata   Json?        @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@index([toStatus])
+  @@index([createdAt])
+  @@map("order_status_history")
+}

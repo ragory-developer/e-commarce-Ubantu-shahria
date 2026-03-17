@@ -1,0 +1,24 @@
+model ProductAnswer {
+  id String @id @default(cuid())
+
+  questionId String          @map("question_id")
+  question   ProductQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  adminId    String? @map("admin_id")
+  customerId String? @map("customer_id")
+
+  answererName String  @map("answerer_name") @db.VarChar(100)
+  answer       String  @db.Text
+  isPublished  Boolean @default(false) @map("is_published")
+  helpfulVotes Int     @default(0) @map("helpful_votes")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([questionId, isPublished])
+  @@index([helpfulVotes])
+  @@index([deletedAt])
+  @@map("product_answers")
+}

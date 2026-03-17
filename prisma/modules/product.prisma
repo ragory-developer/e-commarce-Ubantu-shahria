@@ -1,10 +1,8 @@
-// ─── Product (Core Model) ────────────────────────────────────
 model Product {
   id String @id @default(cuid())
 
-  brandId String? @map("brand_id")
-  brand   Brand?  @relation(fields: [brandId], references: [id], onDelete: SetNull)
-
+  brandId    String?   @map("brand_id")
+  brand      Brand?    @relation(fields: [brandId], references: [id], onDelete: SetNull)
   taxClassId String?   @map("tax_class_id")
   taxClass   TaxClass? @relation(fields: [taxClassId], references: [id], onDelete: SetNull)
 
@@ -14,48 +12,49 @@ model Product {
   shortDescription String? @map("short_description") @db.Text
   sku              String? @unique @db.VarChar(100)
 
-  // Pricing
   price             Decimal?          @db.Decimal(18, 4)
   specialPrice      Decimal?          @map("special_price") @db.Decimal(18, 4)
   specialPriceType  SpecialPriceType? @map("special_price_type")
   specialPriceStart DateTime?         @map("special_price_start")
   specialPriceEnd   DateTime?         @map("special_price_end")
 
-  // Inventory
-  manageStock Boolean @default(false) @map("manage_stock")
-  qty         Int?
-  inStock     Boolean @default(true) @map("in_stock")
+  // Denormalized price range — recomputed when variants change
+  minPrice Decimal? @map("min_price") @db.Decimal(18, 4)
+  maxPrice Decimal? @map("max_price") @db.Decimal(18, 4)
 
-  // Shipping
-  weight     Decimal? @db.Decimal(10, 2)
-  dimensions Json?    @db.JsonB // { "length": 30.5, "width": 20.0, "height": 10.0, "unit": "cm" }
+  manageStock       Boolean @default(false) @map("manage_stock")
+  qty               Int?
+  inStock           Boolean @default(true) @map("in_stock")
+  lowStockThreshold Int?    @map("low_stock_threshold")
 
-  // Flags
+  weight Decimal? @db.Decimal(10, 2)
+  length String?  @db.VarChar(100)
+  width  String?  @db.VarChar(100)
+  height String?  @db.VarChar(100)
 
-  isActive Boolean @default(true) @map("is_active")
-  viewed   Int     @default(0)
+  isActive   Boolean @default(true) @map("is_active")
+  isFeatured Boolean @default(false) @map("is_featured")
+  viewed     Int     @default(0)
+
+  // Denormalized rating — recomputed on review approve/delete
+  averageRating Decimal? @map("average_rating") @db.Decimal(3, 2)
+  reviewCount   Int      @default(0) @map("review_count")
 
   newFrom DateTime? @map("new_from")
   newTo   DateTime? @map("new_to")
 
-  // Media
-  // JSON: [{ "url": "...", "alt": "...", "position": 0, "isThumbnail": true }]
   images    Json? @db.JsonB
   downloads Json? @db.JsonB
 
-  // i18n + SEO
   translations Json? @db.JsonB
   seo          Json? @db.JsonB
 
-  // Relations
   categories        ProductCategory[]
   tags              ProductTag[]
   attributes        ProductAttribute[]
-  options           ProductOption[]
   variations        ProductVariation[]
   variants          ProductVariant[]
   reviews           Review[]
-  wishlistItems     WishlistItem[]
   orderProducts     OrderProduct[]
   relatedTo         RelatedProduct[]   @relation("ProductRelated")
   relatedFrom       RelatedProduct[]   @relation("RelatedToProduct")
@@ -65,8 +64,10 @@ model Product {
   crossSellFrom     CrossSellProduct[] @relation("CrossSellToProduct")
   flashSaleProducts FlashSaleProduct[]
   couponProducts    CouponProduct[]
+  inventoryLogs     InventoryLog[]
+  priceHistory      PriceHistory[]
+  questions         ProductQuestion[]
 
-  // Soft Delete
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   createdBy String?   @map("created_by")
@@ -80,49 +81,12 @@ model Product {
   @@index([sku])
   @@index([isActive, deletedAt])
   @@index([price])
+  @@index([viewed])
+  @@index([averageRating])
+  @@index([isFeatured, isActive])
+  @@index([minPrice, maxPrice])
+  @@index([isActive, isFeatured, averageRating])
   @@index([createdAt])
   @@index([deletedAt])
   @@map("products")
-}
-
-// ─── Product Variant ─────────────────────────────────────────
-model ProductVariant {
-  id String @id @default(cuid())
-
-  uid  String @unique @db.VarChar(191)
-  uids String @db.Text
-
-  productId String  @map("product_id")
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  name              String            @db.VarChar(191)
-  sku               String?           @unique @db.VarChar(100)
-  price             Decimal?          @db.Decimal(18, 4)
-  specialPrice      Decimal?          @map("special_price") @db.Decimal(18, 4)
-  specialPriceType  SpecialPriceType? @map("special_price_type")
-  specialPriceStart DateTime?         @map("special_price_start")
-  specialPriceEnd   DateTime?         @map("special_price_end")
-
-  manageStock Boolean? @map("manage_stock")
-  qty         Int?
-  inStock     Boolean? @map("in_stock")
-
-  isDefault Boolean @default(false) @map("is_default")
-  isActive  Boolean @default(true) @map("is_active")
-  position  Int     @default(0)
-
-  images Json? @db.JsonB
-
-  orderProducts OrderProduct[]
-
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@index([productId])
-  @@index([sku])
-  @@index([isActive, deletedAt])
-  @@index([deletedAt])
-  @@map("product_variants")
 }

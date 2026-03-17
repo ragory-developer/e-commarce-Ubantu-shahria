@@ -1,15 +1,11 @@
-// prisma/modules/device.prisma
-
 model Device {
   id String @id @default(cuid())
 
-  adminId String? @map("admin_id")
-  admin   Admin?  @relation("AdminDevices", fields: [adminId], references: [id], onDelete: Cascade)
-
-  customerId String?   @map("customer_id")
-  customer   Customer? @relation("CustomerDevices", fields: [customerId], references: [id], onDelete: Cascade)
-
-  userType AuthUserType @map("user_type")
+  userType   AuthUserType @map("user_type")
+  adminId    String?      @map("admin_id")
+  admin      Admin?       @relation("AdminDevices", fields: [adminId], references: [id], onDelete: Cascade)
+  customerId String?      @map("customer_id")
+  customer   Customer?    @relation("CustomerDevices", fields: [customerId], references: [id], onDelete: Cascade)
 
   deviceId   String  @map("device_id") @db.VarChar(191)
   deviceName String? @map("device_name") @db.VarChar(191)
@@ -19,15 +15,17 @@ model Device {
   userAgent String? @map("user_agent") @db.Text
 
   isActive     Boolean   @default(true) @map("is_active")
-  createdAt    DateTime  @default(now()) @map("created_at")
   lastActiveAt DateTime  @default(now()) @map("last_active_at")
   revokedAt    DateTime? @map("revoked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
 
   tokens AuthToken[]
 
   @@unique([adminId, deviceId])
   @@unique([customerId, deviceId])
+  @@index([adminId])
+  @@index([customerId])
   @@index([isActive])
-  @@index([revokedAt])
   @@map("devices")
 }

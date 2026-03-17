@@ -1,0 +1,28 @@
+model VerificationOtp {
+  id String @id @default(cuid())
+
+  channel OtpChannel
+  purpose OtpPurpose
+  target  String     @db.VarChar(255)
+
+  codeHash  String   @map("code_hash") @db.VarChar(255)
+  expiresAt DateTime @map("expires_at")
+
+  attempts    Int @default(0)
+  maxAttempts Int @default(5) @map("max_attempts")
+
+  verified   Boolean   @default(false)
+  verifiedAt DateTime? @map("verified_at")
+
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([target])
+  @@index([channel, purpose])
+  @@index([expiresAt])
+  @@index([verified])
+  @@index([target, purpose, verified, expiresAt])
+  @@map("verification_otps")
+}

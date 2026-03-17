@@ -1,0 +1,27 @@
+model WalletTransaction {
+  id String @id @default(cuid())
+
+  walletId String @map("wallet_id")
+  wallet   Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  type WalletTransactionType
+
+  amount  Decimal @db.Decimal(18, 4) // positive=credit, negative=debit
+  balance Decimal @db.Decimal(18, 4) // running balance AFTER this transaction
+
+  orderId     String? @map("order_id")
+  returnId    String? @map("return_id")
+  referenceId String? @map("reference_id")
+
+  description String?   @db.VarChar(255)
+  expiresAt   DateTime? @map("expires_at")
+
+  createdBy String?  @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([walletId])
+  @@index([type])
+  @@index([orderId])
+  @@index([walletId, createdAt])
+  @@map("wallet_transactions")
+}

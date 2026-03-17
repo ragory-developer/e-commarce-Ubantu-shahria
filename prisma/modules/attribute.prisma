@@ -1,0 +1,26 @@
+model Attribute {
+  id String @id @default(cuid())
+
+  attributeSetId String       @map("attribute_set_id")
+  attributeSet   AttributeSet @relation(fields: [attributeSetId], references: [id])
+
+  name         String        @db.VarChar(191)
+  slug         String        @db.VarChar(191)
+  type         AttributeType @default(TEXT)
+  translations Json?         @db.JsonB
+
+  values            AttributeValue[]
+  productAttributes ProductAttribute[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([attributeSetId])
+  @@index([slug])
+  @@index([deletedAt])
+  @@map("attributes")
+}

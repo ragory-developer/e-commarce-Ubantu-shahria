@@ -4,24 +4,21 @@ model AttributeValue {
   attributeId String    @map("attribute_id")
   attribute   Attribute @relation(fields: [attributeId], references: [id])
 
-  value    String @db.VarChar(191)
-  position Int    @default(0)
+  value        String  @db.VarChar(191)
+  label        String? @db.VarChar(191)
+  hexColor     String? @map("hex_color") @db.VarChar(7)
+  translations Json?   @db.JsonB
 
-  translations Json? @db.JsonB
+  productAttributeValues ProductAttributeValue[]
 
-  productAttributeValue ProductAttributeValue[]
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([attributeId])
   @@index([deletedAt])
-  @@index([createdAt])
   @@map("attribute_values")
 }

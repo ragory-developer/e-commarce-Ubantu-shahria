@@ -1,0 +1,26 @@
+model ProductQuestion {
+  id String @id @default(cuid())
+
+  productId  String    @map("product_id")
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  askerName   String  @map("asker_name") @db.VarChar(100)
+  question    String  @db.Text
+  isPublished Boolean @default(false) @map("is_published")
+  isAnswered  Boolean @default(false) @map("is_answered")
+
+  answers ProductAnswer[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([productId, isPublished])
+  @@index([customerId])
+  @@index([isAnswered])
+  @@index([deletedAt])
+  @@map("product_questions")
+}

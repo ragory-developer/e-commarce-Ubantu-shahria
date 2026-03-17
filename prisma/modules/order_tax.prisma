@@ -1,0 +1,16 @@
+model OrderTax {
+  id String @id @default(cuid())
+
+  orderId   String  @map("order_id")
+  order     Order   @relation(fields: [orderId], references: [id])
+  taxRateId String  @map("tax_rate_id")
+  taxRate   TaxRate @relation(fields: [taxRateId], references: [id])
+
+  amount    Decimal @db.Decimal(15, 4)
+  rateName  String  @map("rate_name") @db.VarChar(191)
+  rateValue Decimal @map("rate_value") @db.Decimal(8, 4)
+
+  @@index([orderId])
+  @@index([taxRateId])
+  @@map("order_taxes")
+}

@@ -1,0 +1,11 @@
+model UpSellProduct {
+  productId       String  @map("product_id")
+  product         Product @relation("ProductUpSell", fields: [productId], references: [id], onDelete: Cascade)
+  upSellProductId String  @map("up_sell_product_id")
+  upSellProduct   Product @relation("UpSellToProduct", fields: [upSellProductId], references: [id], onDelete: Cascade)
+  position        Int     @default(0)
+
+  @@id([productId, upSellProductId])
+  @@index([upSellProductId])
+  @@map("up_sell_products")
+}

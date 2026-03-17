@@ -1,0 +1,21 @@
+model CouponUsage {
+  id String @id @default(cuid())
+
+  couponId   String    @map("coupon_id")
+  coupon     Coupon    @relation(fields: [couponId], references: [id])
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  phone      String?   @db.VarChar(20)
+  orderId    String    @map("order_id")
+
+  discountApplied Decimal @map("discount_applied") @db.Decimal(18, 4)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([couponId])
+  @@index([customerId])
+  @@index([orderId])
+  @@index([couponId, customerId])
+  @@index([couponId, phone])
+  @@map("coupon_usages")
+}

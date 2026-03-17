@@ -1,55 +1,51 @@
-// ─── Customer (Guest + Registered in ONE table) ──────────────
-// Flow: Guest browses → OTP verify phone → Guest row created (isGuest=true)
-//       → fills name/address during checkout → order linked to this ID
-//       → later creates account (adds email+password) → isGuest=false
-//       → SAME ID, no data migration, all orders preserved!
+// ! Phone-first auth. Guests can order without a password.
+// ! isGuest=true + password=null = guest who verified phone
+// ! isGuest=false + password set = registered account
 
 model Customer {
   id String @id @default(cuid())
 
-  // Basic Info
   firstName String? @map("first_name") @db.VarChar(100)
   lastName  String? @map("last_name") @db.VarChar(100)
+  email     String? @unique @db.VarChar(255)
+  phone     String  @unique @db.VarChar(20)
+  password  String? @db.VarChar(255)
+  avatar    String?
 
-  email         String? @unique @db.VarChar(255)
   emailVerified Boolean @default(false) @map("email_verified")
-
-  phone         String  @unique @db.VarChar(20)
   phoneVerified Boolean @default(false) @map("phone_verified")
-
-  password String? @db.VarChar(255) // null for guest
-
-  avatar String?
 
   loginAttempts Int       @default(0) @map("login_attempts")
   lockedUntil   DateTime? @map("locked_until")
 
-  // Account State
-  isGuest     Boolean   @default(true) @map("is_guest")
-  isActive    Boolean   @default(true) @map("is_active")
-  // Login Info
+  isGuest  Boolean @default(true) @map("is_guest")
+  isActive Boolean @default(true) @map("is_active")
+
   lastLoginAt DateTime? @map("last_login_at")
   lastLoginIp String?   @map("last_login_ip") @db.VarChar(45)
 
-  // Soft Delete
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  tokens    AuthToken[]
-  devices   Device[]       @relation("CustomerDevices")
-  addresses Address[]
-  orders    Order[]
-  carts     Cart[]
-  reviews   Review[]
-  wishlist  WishlistItem[]
+  tokens           AuthToken[]
+  devices          Device[]          @relation("CustomerDevices")
+  addresses        Address[]
+  orders           Order[]
+  reviews          Review[]
+  wallet           Wallet?
+  checkoutSessions CheckoutSession[]
+  returns          OrderReturn[]
+  notes            CustomerNote[]
+  tags             CustomerTag[]
+  questions        ProductQuestion[]
+  couponUsages     CouponUsage[]
 
   @@index([phone])
   @@index([email])
   @@index([isGuest])
   @@index([isActive, deletedAt])
+  @@index([phone, deletedAt])
   @@map("customers")
 }

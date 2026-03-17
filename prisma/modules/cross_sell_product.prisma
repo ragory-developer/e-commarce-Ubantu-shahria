@@ -1,0 +1,11 @@
+model CrossSellProduct {
+  productId          String  @map("product_id")
+  product            Product @relation("ProductCrossSell", fields: [productId], references: [id], onDelete: Cascade)
+  crossSellProductId String  @map("cross_sell_product_id")
+  crossSellProduct   Product @relation("CrossSellToProduct", fields: [crossSellProductId], references: [id], onDelete: Cascade)
+  position           Int     @default(0)
+
+  @@id([productId, crossSellProductId])
+  @@index([crossSellProductId])
+  @@map("cross_sell_products")
+}

@@ -1,0 +1,22 @@
+model City {
+  id String @id @default(cuid())
+
+  divisionId String   @map("division_id")
+  division   Division @relation(fields: [divisionId], references: [id], onDelete: Cascade)
+
+  name     String  @db.VarChar(191)
+  slug     String  @unique
+  isActive Boolean @default(true) @map("is_active")
+
+  areas     Area[]
+  addresses Address[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([divisionId, name])
+  @@index([divisionId])
+  @@index([isActive])
+  @@index([slug])
+  @@map("cities")
+}

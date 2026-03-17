@@ -1,7 +1,7 @@
 model CurrencyRate {
   id String @id @default(cuid())
 
-  currency String  @unique @db.VarChar(10) // ISO 4217: "USD", "BDT"
+  currency String  @unique @db.VarChar(10)
   rate     Decimal @db.Decimal(18, 4)
 
   createdAt DateTime  @default(now()) @map("created_at")

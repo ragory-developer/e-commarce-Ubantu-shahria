@@ -1,20 +1,22 @@
 model PriceHistory {
   id String @id @default(cuid())
 
-  productId        String  @map("product_id")
-  productVariantId String? @map("product_variant_id")
+  productId        String          @map("product_id")
+  product          Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productVariantId String?         @map("product_variant_id")
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
 
   previousPrice        Decimal? @map("previous_price") @db.Decimal(18, 4)
   newPrice             Decimal? @map("new_price") @db.Decimal(18, 4)
   previousSpecialPrice Decimal? @map("previous_special_price") @db.Decimal(18, 4)
   newSpecialPrice      Decimal? @map("new_special_price") @db.Decimal(18, 4)
 
-  metadata Json? @db.JsonB
-
-  createdAt DateTime @default(now()) @map("created_at")
+  changedBy String?  @map("changed_by")
+  changedAt DateTime @default(now()) @map("changed_at")
+  metadata  Json?    @db.JsonB
 
   @@index([productId])
   @@index([productVariantId])
-  @@index([createdAt])
+  @@index([changedAt])
   @@map("price_history")
 }

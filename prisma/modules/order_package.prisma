@@ -1,0 +1,44 @@
+model OrderPackage {
+  id String @id @default(cuid())
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  courierId String?  @map("courier_id")
+  courier   Courier? @relation(fields: [courierId], references: [id])
+
+  riderId String?        @map("rider_id")
+  rider   DeliveryRider? @relation(fields: [riderId], references: [id], onDelete: SetNull)
+
+  status         PackageStatus @default(CREATED)
+  trackingNumber String?       @map("tracking_number") @db.VarChar(191)
+
+  // [{ orderProductId, productName, qty, weight }]
+  items Json @db.JsonB
+
+  packedAt    DateTime? @map("packed_at")
+  packedBy    String?   @map("packed_by")
+  assignedAt  DateTime? @map("assigned_at")
+  assignedBy  String?   @map("assigned_by")
+  pickedUpAt  DateTime? @map("picked_up_at")
+  deliveredAt DateTime? @map("delivered_at")
+  failedAt    DateTime? @map("failed_at")
+  returnedAt  DateTime? @map("returned_at")
+
+  // { deliveryPhoto, signature, receivedBy, failureReason, attempts }
+  deliveryDetails Json? @map("delivery_details") @db.JsonB
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([orderId])
+  @@index([riderId])
+  @@index([courierId])
+  @@index([status])
+  @@index([trackingNumber])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("order_packages")
+}

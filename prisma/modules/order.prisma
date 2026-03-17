@@ -1,18 +1,25 @@
 model Order {
-  id String @id @default(cuid())
-
-  orderNumber Int @unique @default(autoincrement()) @map("order_number")
+  id          String @id @default(cuid())
+  orderNumber Int    @unique @default(autoincrement()) @map("order_number")
 
   customerId String?   @map("customer_id")
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
-  customerEmail     String  @map("customer_email") @db.VarChar(191)
-  customerPhone     String? @map("customer_phone") @db.VarChar(50)
-  customerFirstName String  @map("customer_first_name") @db.VarChar(191)
-  customerLastName  String  @map("customer_last_name") @db.VarChar(191)
+  // Customer snapshot — immutable
+  customerEmail     String @map("customer_email") @db.VarChar(191)
+  customerPhone     String @map("customer_phone") @db.VarChar(50)
+  customerFirstName String @map("customer_first_name") @db.VarChar(191)
+  customerLastName  String @map("customer_last_name") @db.VarChar(191)
 
-  billingAddress Json @map("billing_address") @db.JsonB
+  // Address snapshot — immutable JSON
   shippingAddress Json @map("shipping_address") @db.JsonB
+  billingAddress  Json @map("billing_address") @db.JsonB
+
+  deliveryZoneId String?       @map("delivery_zone_id")
+  deliveryZone   DeliveryZone? @relation(fields: [deliveryZoneId], references: [id], onDelete: SetNull)
+  courierId      String?       @map("courier_id")
+  courierName    String?       @map("courier_name") @db.VarChar(100)
+  trackingNumber String?       @map("tracking_number")
 
   subTotal     Decimal @map("sub_total") @db.Decimal(18, 4)
   shippingCost Decimal @default(0) @map("shipping_cost") @db.Decimal(18, 4)
@@ -20,53 +27,52 @@ model Order {
   taxTotal     Decimal @default(0) @map("tax_total") @db.Decimal(18, 4)
   total        Decimal @db.Decimal(18, 4)
 
-  shippingMethod    ShippingMethod? @map("shipping_method")
-  paymentMethod     PaymentMethod   @map("payment_method")
-  trackingReference String?         @map("tracking_reference") @db.Text
+  paymentMethod PaymentMethod @map("payment_method")
+  paymentStatus PaymentStatus @default(PENDING) @map("payment_status")
 
   couponId            String?             @map("coupon_id")
-  couponCode          String?             @map("coupon_code") @db.VarChar(191)
+  couponCode          String?             @map("coupon_code") @db.VarChar(50)
   couponDiscountType  CouponDiscountType? @map("coupon_discount_type")
   couponDiscountValue Decimal?            @map("coupon_discount_value") @db.Decimal(18, 4)
 
-  currency     String  @db.VarChar(10)
-  currencyRate Decimal @map("currency_rate") @db.Decimal(18, 4)
+  walletAmountUsed Decimal @default(0) @map("wallet_amount_used") @db.Decimal(18, 4)
+
+  currency     String  @default("BDT") @db.VarChar(10)
+  currencyRate Decimal @default(1) @map("currency_rate") @db.Decimal(18, 4)
 
   status OrderStatus @default(PENDING)
 
-  // Admin/customer notes
-  notes Json? @db.JsonB
-
-  locale    String  @db.VarChar(10)
+  notes     Json?   @db.JsonB
+  locale    String  @default("bn-BD") @db.VarChar(10)
   ipAddress String? @map("ip_address") @db.VarChar(45)
   userAgent String? @map("user_agent") @db.VarChar(500)
 
-  paidAt      DateTime? @map("paid_at")
+  confirmedAt DateTime? @map("confirmed_at")
   shippedAt   DateTime? @map("shipped_at")
   deliveredAt DateTime? @map("delivered_at")
   canceledAt  DateTime? @map("canceled_at")
+  refundedAt  DateTime? @map("refunded_at")
 
   products      OrderProduct[]
   taxes         OrderTax[]
   statusHistory OrderStatusHistory[]
   packages      OrderPackage[]
   transaction   Transaction?
+  returns       OrderReturn[]
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  createdBy String? @map("created_by")
-  updatedBy String? @map("updated_by")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by")
+  updatedBy String?   @map("updated_by")
   deletedAt DateTime? @map("deleted_at")
   deletedBy String?   @map("deleted_by")
 
   @@index([customerId])
   @@index([status])
+  @@index([paymentStatus])
   @@index([orderNumber])
   @@index([paymentMethod])
   @@index([createdAt])
-  @@index([paidAt])
   @@index([deletedAt])
   @@map("orders")
 }

@@ -1,0 +1,17 @@
+model CustomerTag {
+  id String @id @default(cuid())
+
+  customerId String   @map("customer_id")
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  label     String           @db.VarChar(50)
+  color     CustomerTagColor @default(GRAY)
+  createdBy String           @map("created_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([customerId, label])
+  @@index([customerId])
+  @@index([label])
+  @@map("customer_tags")
+}

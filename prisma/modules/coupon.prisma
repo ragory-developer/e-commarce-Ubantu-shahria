@@ -1,27 +1,32 @@
 model Coupon {
   id String @id @default(cuid())
 
-  name         String             @db.VarChar(191)
-  code         String             @unique @db.VarChar(50)
-  discountType CouponDiscountType @default(PERCENT) @map("discount_type")
-  value        Decimal?           @db.Decimal(18, 4)
-  freeShipping Boolean            @default(false) @map("free_shipping")
+  name          String             @db.VarChar(191)
+  code          String             @unique @db.VarChar(50)
+  description   String?            @db.VarChar(500)
+  discountType  CouponDiscountType @default(PERCENT) @map("discount_type")
+  discountValue Decimal            @map("discount_value") @db.Decimal(12, 2)
 
-  minimumSpend Decimal? @map("minimum_spend") @db.Decimal(18, 4)
-  maximumSpend Decimal? @map("maximum_spend") @db.Decimal(18, 4)
+  freeShipping Boolean @default(false) @map("free_shipping")
 
-  usageLimitPerCoupon   Int? @map("usage_limit_per_coupon")
-  usageLimitPerCustomer Int? @map("usage_limit_per_customer")
-  used                  Int  @default(0)
+  minOrderValue Decimal? @map("min_order_value") @db.Decimal(12, 2)
+  maxOrderValue Decimal? @map("max_order_value") @db.Decimal(12, 2)
 
-  isActive  Boolean   @default(true) @map("is_active")
-  startDate DateTime? @map("start_date")
-  endDate   DateTime? @map("end_date")
+  usageLimit     Int? @map("usage_limit")
+  userUsageLimit Int? @map("user_usage_limit")
+  used           Int  @default(0)
 
-  translations Json? @db.JsonB
+  validFrom DateTime @map("valid_from")
+  validTo   DateTime @map("valid_to")
+
+  applicableToAll Boolean @default(true) @map("applicable_to_all")
+
+  isActive     Boolean @default(true) @map("is_active")
+  translations Json?   @db.JsonB
 
   products   CouponProduct[]
   categories CouponCategory[]
+  usages     CouponUsage[]
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
@@ -29,31 +34,8 @@ model Coupon {
   deletedBy String?   @map("deleted_by")
 
   @@index([code])
-  @@index([isActive, startDate, endDate])
+  @@index([isActive])
+  @@index([validFrom, validTo])
   @@index([deletedAt])
   @@map("coupons")
-}
-
-model CouponProduct {
-  couponId  String  @map("coupon_id")
-  coupon    Coupon  @relation(fields: [couponId], references: [id], onDelete: Cascade)
-  productId String  @map("product_id")
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  exclude   Boolean @default(false)
-
-  @@id([couponId, productId])
-  @@index([productId])
-  @@map("coupon_products")
-}
-
-model CouponCategory {
-  couponId   String   @map("coupon_id")
-  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
-  categoryId String   @map("category_id")
-  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  exclude    Boolean  @default(false)
-
-  @@id([couponId, categoryId, exclude])
-  @@index([categoryId])
-  @@map("coupon_categories")
 }

@@ -1,16 +1,12 @@
 model SearchTerm {
-  id String @id @default(cuid())
+  id         String   @id @default(cuid())
+  term       String   @unique @db.VarChar(191)
+  count      Int      @default(1)
+  lastUsedAt DateTime @map("last_used_at")
+  createdAt  DateTime @default(now()) @map("created_at")
 
-  term    String @unique @db.VarChar(191)
-  results Int    @default(0)
-  hits    Int    @default(0)
-
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
-  deletedBy String?   @map("deleted_by")
-
-  @@index([hits(sort: Desc)])
-  @@index([deletedAt])
+  @@index([term])
+  @@index([count])
+  @@index([lastUsedAt])
   @@map("search_terms")
 }

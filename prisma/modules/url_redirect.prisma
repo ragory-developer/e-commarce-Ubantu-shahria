@@ -1,0 +1,21 @@
+model UrlRedirect {
+  id String @id @default(cuid())
+
+  fromPath   String  @unique @map("from_path") @db.VarChar(500)
+  toPath     String  @map("to_path") @db.VarChar(500)
+  statusCode Int     @default(301) @map("status_code")
+  entityType String? @map("entity_type") @db.VarChar(50)
+  entityId   String? @map("entity_id")
+
+  isActive  Boolean   @default(true) @map("is_active")
+  hitCount  Int       @default(0) @map("hit_count")
+  lastHitAt DateTime? @map("last_hit_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([fromPath])
+  @@index([entityType, entityId])
+  @@index([isActive])
+  @@map("url_redirects")
+}

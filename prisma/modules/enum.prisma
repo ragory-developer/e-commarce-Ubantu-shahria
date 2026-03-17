@@ -1,0 +1,287 @@
+enum AdminRole {
+  SUPERADMIN
+  ADMIN
+  MANAGER
+}
+
+enum AdminPermission {
+  PRODUCT_CREATE
+  PRODUCT_READ
+  PRODUCT_UPDATE
+  PRODUCT_DELETE
+  PRODUCT_BULK_EDIT
+  ORDER_READ
+  ORDER_UPDATE_STATUS
+  ORDER_CANCEL
+  ORDER_REFUND
+  INVENTORY_MANAGE
+  INVENTORY_VIEW
+  FINANCE_VIEW
+  TRANSACTION_VIEW
+  COUPON_MANAGE
+  ADMIN_CREATE
+  ADMIN_EDIT
+  ADMIN_DELETE
+  ADMIN_PERMISSIONS
+  SETTINGS_MANAGE
+  LOGS_VIEW
+  RETURN_MANAGE
+}
+
+enum AuthUserType {
+  ADMIN
+  CUSTOMER
+}
+
+enum OtpChannel {
+  EMAIL
+  SMS
+}
+
+enum OtpPurpose {
+  VERIFY_PHONE
+  VERIFY_EMAIL
+  RESET_PASSWORD
+  LOGIN_OTP
+  REGISTER_ACCOUNT
+}
+
+// ! product
+enum AttributeType {
+  TEXT
+  NUMBER
+  SELECT
+  MULTI_SELECT
+  COLOR_PICKER
+  CHECKBOX
+  DATE_PICKER
+}
+
+enum SpecialPriceType {
+  FIXED
+  PERCENT
+}
+
+enum VariationType {
+  TEXT
+  COLOR
+  IMAGE
+  DROPDOWN
+}
+
+// ! order & payment
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  ON_HOLD
+  DECLINED
+}
+
+enum PaymentMethod {
+  BKASH
+  NAGAD
+  SSLCOMMERZ
+  COD
+  BANK_TRANSFER
+  STRIPE
+  PAYPAL
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum TransactionStatus {
+  INITIATED
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+// ! inventory
+enum InventoryReason {
+  INITIAL_STOCK
+  ORDER_PLACED
+  ORDER_RESERVED
+  ORDER_CANCELED
+  ORDER_REFUNDED
+  MANUAL_ADJUSTMENT
+  RESTOCK
+  DAMAGED
+  RETURNED
+  RESERVATION_RELEASED
+  RESERVATION_CONVERTED
+}
+
+enum ReservationStatus {
+  ACTIVE
+  CONVERTED
+  EXPIRED
+  CANCELED
+}
+
+// ! delivery & return
+enum PackageStatus {
+  CREATED
+  PACKED
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+  RETURNED
+}
+
+enum ReturnStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PICKUP_SCHEDULED
+  PICKED_UP
+  RECEIVED
+  INSPECTED
+  COMPLETED
+  CANCELED
+}
+
+enum ReturnReason {
+  WRONG_ITEM
+  DEFECTIVE_PRODUCT
+  ITEM_NOT_AS_DESCRIBED
+  CHANGED_MIND
+  DUPLICATE_ORDER
+  ARRIVED_DAMAGED
+  OTHER
+}
+
+// ! checkout
+enum CheckoutStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  CANCELED
+}
+
+// ! coupon & Discount
+enum CouponDiscountType {
+  FIXED
+  PERCENT
+}
+
+// ! flash sale
+enum FlashSaleStatus {
+  SCHEDULED
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+// ! promotion
+enum PromotionType {
+  CART_DISCOUNT
+  PRODUCT_DISCOUNT
+  BUY_X_GET_Y
+  FREE_SHIPPING
+  BUNDLE_DISCOUNT
+  FIRST_ORDER
+}
+
+// ! refund
+enum RefundStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REJECTED
+}
+
+enum RefundReason {
+  CUSTOMER_REQUEST
+  DEFECTIVE_PRODUCT
+  WRONG_ITEM
+  ITEM_NOT_RECEIVED
+  DUPLICATE_ORDER
+  FRAUD
+  OTHER
+}
+
+// ! shipping
+enum ShippingRuleType {
+  FLAT
+  WEIGHT_BASED
+  PRICE_BASED
+  ITEM_BASED
+}
+
+// ! tax
+enum TaxBasedOn {
+  BILLING_ADDRESS
+  SHIPPING_ADDRESS
+  STORE_ADDRESS
+}
+
+// ! wallet
+enum WalletTransactionType {
+  CREDIT_CASHBACK
+  CREDIT_REFUND
+  CREDIT_ADJUSTMENT
+  CREDIT_REFERRAL
+  DEBIT_ORDER
+  DEBIT_ADJUSTMENT
+  DEBIT_EXPIRED
+}
+
+// ! media files
+enum FileStorage {
+  LOCAL
+  S3
+  CLOUDINARY
+  GCS
+}
+
+// ! notification
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+  WEBHOOK
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  BOUNCED
+}
+
+// ! Queue
+enum QueueJobStatus {
+  QUEUED
+  ACTIVE
+  COMPLETED
+  FAILED
+  STALLED
+  DELAYED
+}
+
+// ! custom tag
+enum CustomerTagColor {
+  RED
+  AMBER
+  GREEN
+  BLUE
+  GRAY
+}
