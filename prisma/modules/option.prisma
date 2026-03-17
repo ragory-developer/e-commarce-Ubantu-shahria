@@ -1,0 +1,66 @@
+model Option {
+  id String @id @default(cuid())
+
+  name       String     @db.VarChar(191)
+  type       OptionType
+  isRequired Boolean    @default(false) @map("is_required")
+  position   Int        @default(0)
+
+  translations   Json            @db.JsonB
+  values         OptionValue[]
+  productOptions ProductOption[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdBy String? @map("created_by")
+  updatedBy String? @map("updated_by")
+
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("options")
+}
+
+model OptionValue {
+  id String @id @default(cuid())
+
+  optionId String @map("option_id")
+  option   Option @relation(fields: [optionId], references: [id])
+
+  label     String          @db.VarChar(191)
+  price     Decimal?        @db.Decimal(18, 4)
+  priceType OptionPriceType @default(FIXED) @map("price_type")
+  position  Int             @default(0)
+
+  translations Json @db.JsonB
+
+  orderOptionValues OrderProductOptionValue[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdBy String? @map("created_by")
+  updatedBy String? @map("updated_by")
+
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([optionId])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("option_values")
+}
+
+model ProductOption {
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+  optionId  String  @map("option_id")
+  option    Option  @relation(fields: [optionId], references: [id])
+
+  @@id([productId, optionId])
+  @@index([optionId])
+  @@map("product_options")
+}

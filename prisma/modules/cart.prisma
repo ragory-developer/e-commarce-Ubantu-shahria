@@ -1,0 +1,23 @@
+model Cart {
+  id String @id @default(cuid())
+
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  sessionId  String?   @map("session_id") @db.VarChar(191)
+  data       Json      @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdBy String? @map("created_by")
+  updatedBy String? @map("updated_by")
+
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([customerId])
+  @@index([sessionId])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("carts")
+}

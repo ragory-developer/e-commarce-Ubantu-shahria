@@ -1,0 +1,46 @@
+model Category {
+  id String @id @default(cuid())
+
+  parentId String?   @map("parent_id")
+  parent   Category? @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+
+  name        String  @db.VarChar(191)
+  slug        String  @unique @db.VarChar(191)
+  description String? @db.Text
+  image       String? @db.VarChar(191)
+  icon        String? @db.VarChar(191)
+
+  // Hierarchical fields
+  position Int     @default(0)
+  depth    Int     @default(0)
+  path     String? @db.VarChar(1000) // e.g., "electronics/mobiles/smartphones"
+  pathIds  String? @map("path_ids") @db.VarChar(1000) // e.g., "id1,id2,id3" - CHANGED from Json to String
+
+  // Add isActive field
+  isActive Boolean @default(true) @map("is_active")
+
+  translations Json? @db.JsonB
+  seo          Json? @db.JsonB
+
+  products         ProductCategory[]
+  couponCategories CouponCategory[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
+
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([parentId])
+  @@index([slug])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([depth])
+  @@index([path])
+  @@index([pathIds])
+  @@index([isActive])
+  @@map("categories")
+}

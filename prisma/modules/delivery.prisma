@@ -1,0 +1,106 @@
+// ─── Delivery / Package / Rider Assignment ───────────────────
+// Professional order fulfillment: package creation → rider assignment → delivery
+
+enum PackageStatus {
+  CREATED // Package record created
+  PACKED // Items physically packed
+  ASSIGNED // Rider assigned
+  PICKED_UP // Rider picked up from warehouse
+  IN_TRANSIT // On the way
+  DELIVERED // Successfully delivered
+  FAILED // Delivery attempt failed
+  RETURNED // Returned to warehouse
+}
+
+model DeliveryRider {
+  id String @id @default(cuid())
+
+  name     String  @db.VarChar(191)
+  phone    String  @unique @db.VarChar(50)
+  email    String? @db.VarChar(191)
+  isActive Boolean @default(true) @map("is_active")
+
+  // Rider details
+  // JSON Example:
+  // {
+  //   "vehicleType": "motorcycle",
+  //   "vehiclePlate": "DH-1234",
+  //   "zone": "Dhaka North",
+  //   "maxCapacity": 10,
+  //   "profileImage": "https://cdn.example.com/riders/r001.jpg"
+  // }
+  details Json? @db.JsonB
+
+  packages OrderPackage[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([phone])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("delivery_riders")
+}
+
+model OrderPackage {
+  id String @id @default(cuid())
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Rider assignment (nullable until assigned)
+  riderId String?        @map("rider_id")
+  rider   DeliveryRider? @relation(fields: [riderId], references: [id], onDelete: SetNull)
+
+  status         PackageStatus @default(CREATED)
+  trackingNumber String?       @map("tracking_number") @db.VarChar(191)
+
+  // Which items are in this package (one order can have multiple packages)
+  // JSON Example:
+  // {
+  //   "items": [
+  //     { "orderProductId": "clx_op_001", "productName": "iPhone 15", "qty": 1 },
+  //     { "orderProductId": "clx_op_002", "productName": "USB-C Cable", "qty": 2 }
+  //   ],
+  //   "weight": 0.85,
+  //   "dimensions": { "length": 30, "width": 20, "height": 10, "unit": "cm" }
+  // }
+  items Json @db.JsonB
+
+  // Timestamps for each stage
+  packedAt    DateTime? @map("packed_at") // When items were physically packed
+  packedBy    String?   @map("packed_by") // Warehouse staff ID
+  assignedAt  DateTime? @map("assigned_at") // When rider was assigned
+  assignedBy  String?   @map("assigned_by") // Admin who assigned
+  pickedUpAt  DateTime? @map("picked_up_at") // When rider picked up
+  deliveredAt DateTime? @map("delivered_at") // When customer received
+  failedAt    DateTime? @map("failed_at") // If delivery failed
+  returnedAt  DateTime? @map("returned_at") // If returned to warehouse
+
+  // Delivery proof & notes
+  // JSON Example:
+  // {
+  //   "deliveryPhoto": "https://cdn.example.com/deliveries/d001.jpg",
+  //   "signature": "https://cdn.example.com/signatures/s001.png",
+  //   "receivedBy": "John (neighbor)",
+  //   "failureReason": null,
+  //   "attempts": 1,
+  //   "notes": "Left at front door per customer request"
+  // }
+  deliveryDetails Json? @map("delivery_details") @db.JsonB
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([orderId])
+  @@index([riderId])
+  @@index([status])
+  @@index([trackingNumber])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("order_packages")
+}

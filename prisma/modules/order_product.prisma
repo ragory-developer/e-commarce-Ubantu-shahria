@@ -1,0 +1,29 @@
+model OrderProduct {
+  id String @id @default(cuid())
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id])
+
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+
+  productVariantId String?         @map("product_variant_id")
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id])
+
+  productName String  @map("product_name") @db.VarChar(191)
+  productSku  String? @map("product_sku") @db.VarChar(100)
+  productSlug String  @map("product_slug") @db.VarChar(191)
+
+  productImage Json? @map("product_image") @db.JsonB
+
+  unitPrice Decimal @map("unit_price") @db.Decimal(18, 4)
+  qty       Int
+  lineTotal Decimal @map("line_total") @db.Decimal(18, 4)
+
+  options    OrderProductOption[]
+  variations OrderProductVariation[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_products")
+}

@@ -1,0 +1,24 @@
+model Setting {
+  id String @id @default(cuid())
+
+  key   String  @unique @db.VarChar(191)
+  group String? @db.VarChar(100) // "store", "shipping", "payment", "tax"
+
+  // JSON: { "value": "FleetCart" } or { "value": true } or { "value": ["USD", "BDT"] }
+  value Json @db.JsonB
+
+  isTranslatable Boolean @default(false) @map("is_translatable")
+
+  // JSON: { "en": { "value": "Free Shipping" }, "bn": { "value": "ফ্রি শিপিং" } }
+  translations Json? @db.JsonB
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([key])
+  @@index([group])
+  @@index([deletedAt])
+  @@map("settings")
+}

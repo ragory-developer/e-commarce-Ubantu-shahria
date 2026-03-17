@@ -1,0 +1,77 @@
+// ─── Queue Job Log ───────────────────────────────────────────
+// NEW — tracks all background jobs (Bull/BullMQ).
+//
+// Why?
+// - "Did the order confirmation email actually send?"
+// - "Why is image processing stuck?"
+// - "How many jobs failed in the last hour?"
+// - Debug production issues without digging through logs
+//
+// NestJS Tip: Log job lifecycle events from BullMQ event listeners
+
+enum QueueJobStatus {
+  QUEUED
+  ACTIVE
+  COMPLETED
+  FAILED
+  STALLED
+  DELAYED
+}
+
+model QueueJob {
+  id String @id @default(cuid())
+
+  queue  String         @db.VarChar(100) // "email", "image-processing", "stock-sync"
+  name   String         @db.VarChar(191) // "send-order-confirmation", "resize-product-image"
+  status QueueJobStatus @default(QUEUED)
+
+  // Job payload and result
+  // JSON Example (email job):
+  // {
+  //   "payload": {
+  //     "to": "john@example.com",
+  //     "template": "order-confirmation",
+  //     "orderId": "clx_order_001"
+  //   },
+  //   "result": {
+  //     "messageId": "sg_abc123",
+  //     "statusCode": 202
+  //   },
+  //   "error": null,
+  //   "duration": 230,
+  //   "attempts": 1,
+  //   "maxAttempts": 3
+  // }
+  //
+  // JSON Example (failed image processing):
+  // {
+  //   "payload": {
+  //     "fileId": "clx_file_001",
+  //     "operations": ["resize:800x600", "webp", "thumbnail:200x200"]
+  //   },
+  //   "result": null,
+  //   "error": {
+  //     "message": "ENOMEM: not enough memory",
+  //     "stack": "Error: ENOMEM...",
+  //     "code": "ENOMEM"
+  //   },
+  //   "duration": 1520,
+  //   "attempts": 3,
+  //   "maxAttempts": 3
+  // }
+  data Json @db.JsonB
+
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  failedAt    DateTime? @map("failed_at")
+
+  // IMMUTABLE
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([queue])
+  @@index([name])
+  @@index([status])
+  @@index([createdAt])
+  @@index([queue, status]) // "How many email jobs are stuck?"
+  @@map("queue_jobs")
+}

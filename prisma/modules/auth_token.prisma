@@ -1,0 +1,64 @@
+model AuthToken {
+  id String @id @default(cuid())
+
+  userType AuthUserType @map("user_type")
+
+  adminId String? @map("admin_id")
+  admin   Admin?  @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  deviceId String? @map("device_id")
+  device   Device? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  tokenHash   String @map("token_hash") @db.VarChar(255)
+  tokenFamily String @map("token_family") @db.VarChar(191)
+
+  expiresAt DateTime @map("expires_at")
+
+  revoked       Boolean   @default(false)
+  revokedAt     DateTime? @map("revoked_at")
+  revokedReason String?   @map("revoked_reason") @db.VarChar(100)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tokenHash])
+  @@index([tokenFamily])
+  @@index([userType])
+  @@index([adminId])
+  @@index([customerId])
+  @@index([deviceId])
+  @@index([expiresAt])
+  @@index([revoked])
+  @@map("auth_tokens")
+}
+
+model VerificationOtp {
+  id String @id @default(cuid())
+
+  channel OtpChannel
+  purpose OtpPurpose
+
+  target String @db.VarChar(255)
+
+  codeHash  String   @map("code_hash") @db.VarChar(255)
+  expiresAt DateTime @map("expires_at")
+
+  attempts    Int @default(0)
+  maxAttempts Int @default(5) @map("max_attempts")
+
+  verified   Boolean   @default(false)
+  verifiedAt DateTime? @map("verified_at")
+
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([target])
+  @@index([channel, purpose])
+  @@index([expiresAt])
+  @@index([verified])
+  @@map("verification_otps")
+}

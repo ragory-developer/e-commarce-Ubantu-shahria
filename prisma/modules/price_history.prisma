@@ -1,0 +1,20 @@
+model PriceHistory {
+  id String @id @default(cuid())
+
+  productId        String  @map("product_id")
+  productVariantId String? @map("product_variant_id")
+
+  previousPrice        Decimal? @map("previous_price") @db.Decimal(18, 4)
+  newPrice             Decimal? @map("new_price") @db.Decimal(18, 4)
+  previousSpecialPrice Decimal? @map("previous_special_price") @db.Decimal(18, 4)
+  newSpecialPrice      Decimal? @map("new_special_price") @db.Decimal(18, 4)
+
+  metadata Json? @db.JsonB
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([productId])
+  @@index([productVariantId])
+  @@index([createdAt])
+  @@map("price_history")
+}

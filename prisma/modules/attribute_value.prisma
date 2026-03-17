@@ -1,0 +1,27 @@
+model AttributeValue {
+  id String @id @default(cuid())
+
+  attributeId String    @map("attribute_id")
+  attribute   Attribute @relation(fields: [attributeId], references: [id])
+
+  value    String @db.VarChar(191)
+  position Int    @default(0)
+
+  translations Json? @db.JsonB
+
+  productAttributeValue ProductAttributeValue[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdBy String? @map("created_by")
+  updatedBy String? @map("updated_by")
+
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([attributeId])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("attribute_values")
+}

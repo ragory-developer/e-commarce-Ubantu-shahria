@@ -1,0 +1,55 @@
+// ─── Customer (Guest + Registered in ONE table) ──────────────
+// Flow: Guest browses → OTP verify phone → Guest row created (isGuest=true)
+//       → fills name/address during checkout → order linked to this ID
+//       → later creates account (adds email+password) → isGuest=false
+//       → SAME ID, no data migration, all orders preserved!
+
+model Customer {
+  id String @id @default(cuid())
+
+  // Basic Info
+  firstName String? @map("first_name") @db.VarChar(100)
+  lastName  String? @map("last_name") @db.VarChar(100)
+
+  email         String? @unique @db.VarChar(255)
+  emailVerified Boolean @default(false) @map("email_verified")
+
+  phone         String  @unique @db.VarChar(20)
+  phoneVerified Boolean @default(false) @map("phone_verified")
+
+  password String? @db.VarChar(255) // null for guest
+
+  avatar String?
+
+  loginAttempts Int       @default(0) @map("login_attempts")
+  lockedUntil   DateTime? @map("locked_until")
+
+  // Account State
+  isGuest     Boolean   @default(true) @map("is_guest")
+  isActive    Boolean   @default(true) @map("is_active")
+  // Login Info
+  lastLoginAt DateTime? @map("last_login_at")
+  lastLoginIp String?   @map("last_login_ip") @db.VarChar(45)
+
+  // Soft Delete
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  tokens    AuthToken[]
+  devices   Device[]       @relation("CustomerDevices")
+  addresses Address[]
+  orders    Order[]
+  carts     Cart[]
+  reviews   Review[]
+  wishlist  WishlistItem[]
+
+  @@index([phone])
+  @@index([email])
+  @@index([isGuest])
+  @@index([isActive, deletedAt])
+  @@map("customers")
+}

@@ -1,0 +1,114 @@
+// ─── Promotions (Advanced Rule Engine) ───────────────────────
+// NEW — goes far beyond basic coupons.
+//
+// Supports:
+// - Buy X Get Y Free
+// - Bundle discounts (buy A+B+C = 15% off)
+// - Spend $100+ get free shipping
+// - First-order discount
+// - Category-wide sales
+// - Stackable vs non-stackable promotions
+// - Auto-apply (no coupon code needed)
+
+enum PromotionType {
+  CART_DISCOUNT // $ or % off entire cart
+  PRODUCT_DISCOUNT // $ or % off specific products
+  BUY_X_GET_Y // Buy 2 get 1 free
+  FREE_SHIPPING // Free shipping on conditions
+  BUNDLE_DISCOUNT // Discount when buying specific combo
+  FIRST_ORDER // First purchase discount
+}
+
+model Promotion {
+  id String @id @default(cuid())
+
+  name        String        @db.VarChar(191)
+  slug        String        @unique @db.VarChar(191)
+  description String?       @db.Text
+  type        PromotionType
+  isAutoApply Boolean       @default(false) @map("is_auto_apply") // No code needed
+  isStackable Boolean       @default(false) @map("is_stackable") // Can combine with other promos
+  priority    Int           @default(0) // Higher = applied first
+
+  // The rules engine — the heart of the promotion
+  // JSON Example (Buy 2 Get 1 Free):
+  // {
+  //   "conditions": {
+  //     "minQty": 3,
+  //     "applicableProducts": ["clx_prod_001", "clx_prod_002"],
+  //     "applicableCategories": [],
+  //     "customerGroups": [],
+  //     "minOrderTotal": null
+  //   },
+  //   "actions": {
+  //     "discountType": "FREE_ITEM",
+  //     "discountValue": 1,
+  //     "freeItemQty": 1,
+  //     "appliesTo": "cheapest",
+  //     "maxDiscountAmount": null
+  //   }
+  // }
+  //
+  // JSON Example (Spend $100 get 15% off):
+  // {
+  //   "conditions": {
+  //     "minOrderTotal": 100.00,
+  //     "applicableProducts": [],
+  //     "applicableCategories": [],
+  //     "customerGroups": [],
+  //     "excludeProducts": ["clx_prod_sale_001"],
+  //     "excludeCategories": ["clx_cat_clearance"],
+  //     "firstOrderOnly": false
+  //   },
+  //   "actions": {
+  //     "discountType": "PERCENT",
+  //     "discountValue": 15,
+  //     "maxDiscountAmount": 50.00,
+  //     "appliesTo": "order_total"
+  //   }
+  // }
+  //
+  // JSON Example (Bundle: Phone + Case + Charger = 20% off):
+  // {
+  //   "conditions": {
+  //     "requiredProducts": [
+  //       { "productId": "clx_phone", "minQty": 1 },
+  //       { "productId": "clx_case", "minQty": 1 },
+  //       { "productId": "clx_charger", "minQty": 1 }
+  //     ],
+  //     "customerGroups": []
+  //   },
+  //   "actions": {
+  //     "discountType": "PERCENT",
+  //     "discountValue": 20,
+  //     "appliesTo": "bundle_total",
+  //     "maxDiscountAmount": null
+  //   }
+  // }
+  rules Json @db.JsonB
+
+  isActive  Boolean   @default(true) @map("is_active")
+  startDate DateTime? @map("start_date")
+  endDate   DateTime? @map("end_date")
+
+  usageLimit Int? @map("usage_limit")
+  used       Int  @default(0)
+
+  // JSON Example:
+  // { "bn": { "name": "২টি কিনলে ১টি ফ্রি" } }
+  translations Json? @db.JsonB
+
+  // ─── Soft Delete ───────────────────────
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([slug])
+  @@index([type])
+  @@index([isActive, startDate, endDate])
+  @@index([isAutoApply])
+  @@index([priority])
+  @@index([deletedAt])
+  @@map("promotions")
+}

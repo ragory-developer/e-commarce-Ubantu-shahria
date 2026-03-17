@@ -1,0 +1,19 @@
+model AttributeSet {
+  id String @id @default(cuid())
+
+  name String @db.VarChar(191)
+  slug String @unique @db.VarChar(191)
+
+  translations Json? @db.JsonB
+
+  attributes Attribute[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([slug])
+  @@index([deletedAt])
+  @@map("attribute_sets")
+}

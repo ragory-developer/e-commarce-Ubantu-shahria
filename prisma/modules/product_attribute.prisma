@@ -1,0 +1,27 @@
+model ProductAttribute {
+  id String @id @default(cuid())
+
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id])
+
+  attributeId String    @map("attribute_id")
+  attribute   Attribute @relation(fields: [attributeId], references: [id])
+
+  value ProductAttributeValue[]
+
+  @@index([productId, attributeId])
+  @@index([productId])
+  @@index([attributeId])
+  @@map("product_attributes")
+}
+
+model ProductAttributeValue {
+  productAttributeId String           @map("product_attribute_id")
+  productAttribute   ProductAttribute @relation(fields: [productAttributeId], references: [id])
+  attributeValueId   String           @map("attribute_value_id")
+  attributeValue     AttributeValue   @relation(fields: [attributeValueId], references: [id])
+
+  @@id([productAttributeId, attributeValueId])
+  @@index([attributeValueId])
+  @@map("product_attribute_values")
+}

@@ -1,0 +1,53 @@
+// ─── API Keys ────────────────────────────────────────────────
+// NEW — for external access (mobile apps, B2B partners, POS systems).
+//
+// Why?
+// - Mobile app needs API access without user session
+// - B2B partners (marketplace, ERP) need scoped API access
+// - Rate limiting per API key
+// - Revocable without affecting user accounts
+
+model ApiKey {
+  id String @id @default(cuid())
+
+  userId String @map("user_id") // Owner of the API key
+
+  name   String @db.VarChar(191) // "Mobile App - iOS", "ERP Integration"
+  key    String @unique @db.VarChar(500) // Hashed API key (never store plain)
+  prefix String @db.VarChar(10) // First 8 chars for identification: "fc_live_"
+
+  // Scoped permissions
+  // JSON Example (read-only product access):
+  // {
+  //   "scopes": ["products:read", "categories:read", "brands:read"],
+  //   "rateLimit": { "requests": 1000, "window": "1h" },
+  //   "allowedIps": [],
+  //   "allowedOrigins": ["https://partner-site.com"]
+  // }
+  //
+  // JSON Example (full POS access):
+  // {
+  //   "scopes": ["products:read", "orders:read", "orders:create", "inventory:read", "inventory:write"],
+  //   "rateLimit": { "requests": 5000, "window": "1h" },
+  //   "allowedIps": ["203.0.113.50"],
+  //   "allowedOrigins": []
+  // }
+  permissions Json @db.JsonB
+
+  lastUsedAt DateTime? @map("last_used_at")
+  expiresAt  DateTime? @map("expires_at") // null = never expires
+  revokedAt  DateTime? @map("revoked_at")
+
+  // ─── Soft Delete ───────────────────────
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([key])
+  @@index([prefix])
+  @@index([userId])
+  @@index([revokedAt])
+  @@index([deletedAt])
+  @@map("api_keys")
+}

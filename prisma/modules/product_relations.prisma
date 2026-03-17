@@ -1,0 +1,66 @@
+// ─── Product ↔ Category (M:N) ────────────────────────────────
+model ProductCategory {
+  productId  String   @map("product_id")
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  categoryId String   @map("category_id")
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  @@id([productId, categoryId])
+  @@index([categoryId])
+  @@map("product_categories")
+}
+
+// ─── Product ↔ Tag (M:N) ─────────────────────────────────────
+model ProductTag {
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tagId     String  @map("tag_id")
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  @@id([productId, tagId])
+  @@index([tagId])
+  @@map("product_tags")
+}
+
+// ─── Related Products ────────────────────────────────────────
+model RelatedProduct {
+  productId        String  @map("product_id")
+  product          Product @relation("ProductRelated", fields: [productId], references: [id], onDelete: Cascade)
+  relatedProductId String  @map("related_product_id")
+  relatedProduct   Product @relation("RelatedToProduct", fields: [relatedProductId], references: [id], onDelete: Cascade)
+  position         Int     @default(0)
+
+  @@id([productId, relatedProductId])
+  @@index([relatedProductId])
+  @@map("related_products")
+}
+
+// ─── Up-Sell Products ────────────────────────────────────��───
+model UpSellProduct {
+  productId       String  @map("product_id")
+  product         Product @relation("ProductUpSell", fields: [productId], references: [id], onDelete: Cascade)
+  upSellProductId String  @map("up_sell_product_id")
+  upSellProduct   Product @relation("UpSellToProduct", fields: [upSellProductId], references: [id], onDelete: Cascade)
+  position        Int     @default(0)
+
+  @@id([productId, upSellProductId])
+  @@index([upSellProductId])
+  @@map("up_sell_products")
+}
+
+// ─── Cross-Sell Products ─────────────────────────────────────
+model CrossSellProduct {
+  productId          String  @map("product_id")
+  product            Product @relation("ProductCrossSell", fields: [productId], references: [id], onDelete: Cascade)
+  crossSellProductId String  @map("cross_sell_product_id")
+  crossSellProduct   Product @relation("CrossSellToProduct", fields: [crossSellProductId], references: [id], onDelete: Cascade)
+  position           Int     @default(0)
+
+  @@id([productId, crossSellProductId])
+  @@index([crossSellProductId])
+  @@map("cross_sell_products")
+}

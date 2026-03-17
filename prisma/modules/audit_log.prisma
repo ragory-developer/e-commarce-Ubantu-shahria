@@ -1,0 +1,24 @@
+// ─── Audit Log (decoupled — works for Admin & Customer) ──────
+model AuditLog {
+  id String @id @default(cuid())
+
+  actorType AuthUserType // ADMIN or CUSTOMER
+  actorId   String?      @map("actor_id")
+
+  action     AuditAction
+  entityType String      @map("entity_type") @db.VarChar(50)
+  entityId   String      @map("entity_id")
+
+  changes Json? @db.JsonB
+
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([actorType, actorId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

@@ -1,0 +1,38 @@
+// ─── Order Status History ────────────────────────────────────
+// Tracks every status change with who/when/why.
+// Essential for: customer-facing tracking page, dispute resolution, SLA monitoring.
+
+model OrderStatusHistory {
+  id String @id @default(cuid())
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  fromStatus OrderStatus? @map("from_status") // null for initial creation
+  toStatus   OrderStatus  @map("to_status")
+
+  // Who changed it and why
+  // JSON Example:
+  // {
+  //   "changedBy": "admin_clx789",
+  //   "changedByRole": "ADMIN",
+  //   "reason": "Customer confirmed payment via phone",
+  //   "note": "Bank transfer receipt #TXN-456 verified"
+  // }
+  //
+  // JSON Example (system auto-change):
+  // {
+  //   "changedBy": "system",
+  //   "reason": "Payment webhook received",
+  //   "webhookLogId": "clx_wh_001"
+  // }
+  metadata Json? @db.JsonB
+
+  // IMMUTABLE
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@index([toStatus])
+  @@index([createdAt])
+  @@map("order_status_history")
+}

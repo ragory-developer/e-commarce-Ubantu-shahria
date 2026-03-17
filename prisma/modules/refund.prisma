@@ -1,0 +1,53 @@
+enum RefundStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REJECTED
+}
+
+enum RefundReason {
+  CUSTOMER_REQUEST
+  DEFECTIVE_PRODUCT
+  WRONG_ITEM
+  ITEM_NOT_RECEIVED
+  DUPLICATE_ORDER
+  FRAUD
+  OTHER
+}
+
+model Refund {
+  id String @id @default(cuid())
+
+  orderId       String @map("order_id")
+  transactionId String @map("transaction_id")
+
+  amount   Decimal      @db.Decimal(18, 4)
+  currency String       @db.VarChar(10)
+  status   RefundStatus @default(PENDING)
+  reason   RefundReason
+
+  details Json @db.JsonB
+
+  gatewayResponse Json? @map("gateway_response") @db.JsonB
+
+  processedBy String? @map("processed_by")
+
+  processedAt DateTime? @map("processed_at")
+  completedAt DateTime? @map("completed_at")
+  rejectedAt  DateTime? @map("rejected_at")
+
+  rejectionDetails Json? @map("rejection_details") @db.JsonB
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([orderId])
+  @@index([transactionId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("refunds")
+}

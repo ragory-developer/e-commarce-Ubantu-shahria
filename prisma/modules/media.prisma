@@ -1,0 +1,89 @@
+model Media {
+  id String @id @default(cuid())
+
+  // file info
+  filename     String @db.VarChar(191)
+  originalName String @map("original_name") @db.VarChar(191)
+  mimeType     String @map("mime_Type") @db.VarChar(100)
+  size         Int
+  extension    String @db.VarChar(20)
+
+  // ! storage
+  storageDriver String @map("storage_driver") @db.VarChar(20) //local || cloudinary
+  storagePath   String @map("storage_path") @db.VarChar(500)
+  storageUrl    String @map("storage_url") @db.VarChar(500)
+
+  // Image variants (JSON)
+  // Example for local:
+  // {
+  //   "thumb": { "url": "http://localhost:3000/uploads/media/2026/02/file_thumb.jpg", "width": 150, "height": 150 },
+  //   "medium": { "url": "http://localhost:3000/uploads/media/2026/02/file_medium.jpg", "width": 600, "height": 600 },
+  //   "original": { "url": "http://localhost:3000/uploads/media/2026/02/file.jpg", "width": 1920, "height": 1080 }
+  // }
+  // Example for cloudinary:
+  // {
+  //   "thumb": { "url": "https://res.cloudinary.com/.../c_thumb,w_150,h_150/...", "width": 150, "height": 150 },
+  //   "medium": { "url": "https://res.cloudinary.com/.../c_fill,w_600,h_600/...", "width": 600, "height": 600 },
+  //   "original": { "url": "https://res.cloudinary.com/.../...", "width": 1920, "height": 1080 }
+  // }
+
+  variants Json? @db.JsonB
+
+  // ! image metadata
+  width  Int?
+  height Int?
+  alt    String? @db.VarChar(191)
+
+  // Reference tracking (how many entities use this media)
+  referenceCount Int @default(0) @map("reference_count")
+
+  // Polymorphic relations
+  entityMedia EntityMedia[]
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
+
+  // Soft delete
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([storageDriver])
+  @@index([mimeType])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@index([referenceCount])
+  @@map("media")
+}
+
+// ─── EntityMedia (Polymorphic Junction) ──────────────────────
+// Links media to any entity: Product, Category, Brand, Tag, Admin, Customer
+
+model EntityMedia {
+  id String @id @default(cuid())
+
+  // Polymorphic relation
+  entityType String @map("entity_type") @db.VarChar(50) // 'Product', 'Category', 'Brand', 'Tag', 'Admin', 'Customer'
+  entityId   String @map("entity_id")
+
+  // Media
+  mediaId String @map("media_id")
+  media   Media  @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  // Ordering & purpose
+  position Int     @default(0) // For gallery ordering
+  purpose  String? @db.VarChar(50) // 'gallery', 'thumbnail', 'icon', 'banner', 'logo', 'avatar'
+  isMain   Boolean @default(false) @map("is_main") // Mark as main/primary image
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([entityType, entityId, mediaId]) // Prevent duplicate links
+  @@index([entityType, entityId])
+  @@index([mediaId])
+  @@index([isMain])
+  @@map("entity_media")
+}

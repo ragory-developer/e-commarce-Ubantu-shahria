@@ -1,0 +1,58 @@
+model OrderProductOption {
+  id String @id @default(cuid())
+
+  orderProductId String       @map("order_product_id")
+  orderProduct   OrderProduct @relation(fields: [orderProductId], references: [id])
+
+  optionName String  @map("option_name") @db.VarChar(191)
+  value      String? @db.Text
+
+  optionValues OrderProductOptionValue[]
+
+  @@unique([orderProductId, optionName])
+  @@map("order_product_options")
+}
+
+model OrderProductOptionValue {
+  id String @id @default(cuid())
+
+  orderProductOptionId String             @map("order_product_option_id")
+  orderProductOption   OrderProductOption @relation(fields: [orderProductOptionId], references: [id])
+
+  optionValueId String      @map("option_value_id")
+  optionValue   OptionValue @relation(fields: [optionValueId], references: [id])
+
+  label String   @db.VarChar(191)
+  price Decimal? @db.Decimal(18, 4)
+
+  @@index([optionValueId])
+  @@map("order_product_option_values")
+}
+
+model OrderProductVariation {
+  id String @id @default(cuid())
+
+  orderProductId String       @map("order_product_id")
+  orderProduct   OrderProduct @relation(fields: [orderProductId], references: [id])
+
+  variationName String        @map("variation_name") @db.VarChar(191)
+  type          VariationType
+  value         String        @db.VarChar(191)
+
+  variationValues OrderProductVariationValue[]
+
+  @@unique([orderProductId, variationName])
+  @@map("order_product_variations")
+}
+
+model OrderProductVariationValue {
+  orderProductVariationId String                @map("order_product_variation_id")
+  orderProductVariation   OrderProductVariation @relation(fields: [orderProductVariationId], references: [id])
+
+  variationValueId String         @map("variation_value_id")
+  variationValue   VariationValue @relation(fields: [variationValueId], references: [id])
+
+  @@id([orderProductVariationId, variationValueId])
+  @@index([variationValueId])
+  @@map("order_product_variation_values")
+}

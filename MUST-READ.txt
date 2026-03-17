@@ -1,0 +1,14 @@
+HOW YOU SHOULD RUN EVERYTHING (Daily Workflow)
+🔹 First time / after schema changes
+npm run prisma:build
+npx prisma format
+npx prisma validate
+
+🔹 Generate Prisma Client
+npm run prisma:generate
+
+🔹 New migration
+npm run prisma:migrate
+
+🔹 Normal development
+npm run start:dev

@@ -1,0 +1,62 @@
+model TaxClass {
+  id String @id @default(cuid())
+
+  name    String     @db.VarChar(191)
+  basedOn TaxBasedOn @default(SHIPPING_ADDRESS) @map("based_on")
+
+  translations Json? @db.JsonB
+
+  rates    TaxRate[]
+  products Product[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([deletedAt])
+  @@map("tax_classes")
+}
+
+model TaxRate {
+  id String @id @default(cuid())
+
+  taxClassId String   @map("tax_class_id")
+  taxClass   TaxClass @relation(fields: [taxClassId], references: [id])
+
+  name     String  @db.VarChar(191)
+  country  String  @db.VarChar(2)
+  state    String  @default("*") @db.VarChar(191)
+  city     String  @default("*") @db.VarChar(191)
+  zip      String  @default("*") @db.VarChar(20)
+  rate     Decimal @db.Decimal(8, 4)
+  position Int     @default(0)
+
+  translations Json? @db.JsonB
+
+  orderTaxes OrderTax[]
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+  deletedAt  DateTime?  @map("deleted_at")
+  deletedBy  String?    @map("deleted_by")
+
+  @@index([taxClassId])
+  @@index([country, state])
+  @@index([deletedAt])
+  @@map("tax_rates")
+}
+
+model OrderTax {
+  orderId   String  @map("order_id")
+  order     Order   @relation(fields: [orderId], references: [id])
+  taxRateId String  @map("tax_rate_id")
+  taxRate   TaxRate @relation(fields: [taxRateId], references: [id])
+
+  amount    Decimal @db.Decimal(15, 4)
+  rateName  String  @map("rate_name") @db.VarChar(191)
+  rateValue Decimal @map("rate_value") @db.Decimal(8, 4)
+
+  @@id([orderId, taxRateId])
+  @@index([taxRateId])
+  @@map("order_taxes")
+}

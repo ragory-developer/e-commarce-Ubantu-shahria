@@ -1,0 +1,16 @@
+model SearchTerm {
+  id String @id @default(cuid())
+
+  term    String @unique @db.VarChar(191)
+  results Int    @default(0)
+  hits    Int    @default(0)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([hits(sort: Desc)])
+  @@index([deletedAt])
+  @@map("search_terms")
+}

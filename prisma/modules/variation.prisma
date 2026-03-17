@@ -1,0 +1,70 @@
+model Variation {
+  id String @id @default(cuid())
+
+  uid      String        @unique @db.VarChar(191)
+  name     String        @db.VarChar(191)
+  type     VariationType @default(TEXT)
+  isGlobal Boolean       @default(true) @map("is_global")
+  position Int           @default(0)
+
+  translations Json? @db.JsonB
+
+  values            VariationValue[]
+  productVariations ProductVariation[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdBy String? @map("created_by")
+  updatedBy String? @map("updated_by")
+
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("variations")
+}
+
+model VariationValue {
+  id String @id @default(cuid())
+
+  uid String @unique @db.VarChar(191)
+
+  variationId String    @map("variation_id")
+  variation   Variation @relation(fields: [variationId], references: [id])
+
+  label    String  @db.VarChar(191)
+  value    String? @db.VarChar(191)
+  position Int     @default(0)
+
+  translations Json? @db.JsonB
+
+  orderVariationValues OrderProductVariationValue[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdBy String? @map("created_by")
+  updatedBy String? @map("updated_by")
+
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([variationId])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("variation_values")
+}
+
+model ProductVariation {
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  variationId String    @map("variation_id")
+  variation   Variation @relation(fields: [variationId], references: [id], onDelete: Cascade)
+
+  @@id([productId, variationId])
+  @@index([variationId])
+  @@map("product_variations")
+}

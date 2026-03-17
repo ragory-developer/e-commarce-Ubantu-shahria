@@ -1,0 +1,52 @@
+enum ShippingRateType {
+  FLAT // Fixed cost per order
+  WEIGHT_BASED // Cost per kg
+  PRICE_BASED // Free above X, else Y
+  ITEM_BASED // Cost per item
+}
+
+model ShippingZone {
+  id String @id @default(cuid())
+
+  name     String  @db.VarChar(191)
+  isActive Boolean @default(true) @map("is_active")
+
+  regions Json @db.JsonB
+
+  rates ShippingRate[]
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("shipping_zones")
+}
+
+model ShippingRate {
+  id String @id @default(cuid())
+
+  shippingZoneId String       @map("shipping_zone_id")
+  shippingZone   ShippingZone @relation(fields: [shippingZoneId], references: [id], onDelete: Cascade)
+
+  name String @db.VarChar(191)
+
+  type     ShippingRateType @default(FLAT)
+  cost     Decimal          @db.Decimal(18, 4)
+  isActive Boolean          @default(true) @map("is_active")
+
+  conditions Json? @db.JsonB
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+  deletedBy String?   @map("deleted_by")
+
+  @@index([shippingZoneId])
+  @@index([type])
+  @@index([isActive])
+  @@index([deletedAt])
+  @@map("shipping_rates")
+}
