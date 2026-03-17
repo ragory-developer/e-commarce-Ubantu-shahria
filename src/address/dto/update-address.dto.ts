@@ -1,54 +1,61 @@
-import { IsString, IsBoolean, IsOptional, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsBoolean,
+  IsOptional,
+  MaxLength,
+  IsNotEmpty,
+} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform } from 'class-transformer';
 
 export class UpdateAddressDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'Office' })
   @IsOptional()
   @IsString()
   @MaxLength(50)
   label?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'Jane Doe' })
   @IsOptional()
   @IsString()
   @MaxLength(191)
-  address?: string;
+  fullName?: string;
 
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  descriptions?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(191)
-  city?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(191)
-  state?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(191)
-  road?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @MaxLength(20)
-  zip?: string;
-
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: '01712345678' })
   @IsOptional()
   @IsString()
   @MaxLength(50)
-  @Transform(({ value }) => value?.trim().toUpperCase())
+  phone?: string;
+
+  @ApiPropertyOptional({ example: 'House 456, Road 10, Gulshan 2' })
+  @IsOptional()
+  @IsString()
+  addressLine?: string;
+
+  @ApiPropertyOptional({ example: 'clx1234567890' })
+  @IsOptional()
+  @IsString()
+  divisionId?: string;
+
+  @ApiPropertyOptional({ example: 'clx9876543210' })
+  @IsOptional()
+  @IsString()
+  cityId?: string;
+
+  @ApiPropertyOptional({ example: 'clx5555555555' })
+  @IsOptional()
+  @IsString()
+  areaId?: string;
+
+  @ApiPropertyOptional({ example: '1212' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  postalCode?: string;
+
+  @ApiPropertyOptional({ example: 'BD' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
   country?: string;
 
   @ApiPropertyOptional()
