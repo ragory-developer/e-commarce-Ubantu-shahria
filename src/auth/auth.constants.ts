@@ -42,7 +42,9 @@ export const AUTH_ERROR = {
   CUSTOMER_NOT_FOUND: 'Customer not found',
   CUSTOMER_PHONE_TAKEN: 'Phone number is already registered',
   CUSTOMER_EMAIL_TAKEN: 'Email is already registered',
-  CUSTOMER_NOT_VERIFIED: 'Phone number is not verified',
+  CUSTOMER_NOT_VERIFIED: 'Account not verified',
+  CUSTOMER_PHONE_NOT_VERIFIED: 'Phone number is not verified',
+  CUSTOMER_EMAIL_NOT_VERIFIED: 'Email address is not verified',
   CUSTOMER_IS_GUEST:
     'Please complete registration before logging in with password',
 
@@ -58,3 +60,36 @@ export const JWT_PAYLOAD_VERSION = 1;
 // Short-lived registration token: 15 minutes
 export const REGISTRATION_TOKEN_EXPIRES_IN = '15m';
 export const REGISTRATION_TOKEN_EXPIRES_MS = 15 * 60 * 1000;
+
+// ─── Response Messages ────────────────────────────────────────
+export const AUTH_MESSAGES = {
+  // Login
+  LOGIN_SUCCESS: 'Login successful',
+  LOGOUT_SUCCESS: 'Logged out successfully',
+  LOGOUT_ALL_SUCCESS: 'Logged out from all devices',
+
+  // Registration
+  OTP_SENT: 'OTP sent successfully',
+  OTP_VERIFIED: 'OTP verified successfully',
+  REGISTRATION_COMPLETE: 'Registration completed successfully',
+
+  // Password
+  PASSWORD_RESET_OTP_SENT: 'Password reset OTP sent',
+  PASSWORD_RESET_SUCCESS: 'Password reset successfully',
+  PASSWORD_CHANGED: 'Password changed successfully',
+
+  // Verification
+  PHONE_VERIFIED: 'Phone number verified successfully',
+  EMAIL_VERIFIED: 'Email address verified successfully',
+
+  // Token
+  TOKEN_REFRESHED: 'Token refreshed successfully',
+
+  // Profile
+  PROFILE_RETRIEVED: 'Profile retrieved successfully',
+  PROFILE_UPDATED: 'Profile updated successfully',
+
+  // Device
+  DEVICES_RETRIEVED: 'Devices retrieved successfully',
+  DEVICE_REMOVED: 'Device removed successfully',
+} as const;

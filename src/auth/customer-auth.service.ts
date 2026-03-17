@@ -1,6 +1,5 @@
 // ─── src/auth/customer-auth.service.ts ───────────────────────
-// Responsibility: Customer AUTHENTICATION only.
-// Profile management → customer.service.ts
+// Enhanced customer authentication with email + phone support
 
 import {
   Injectable,
@@ -13,6 +12,7 @@ import {
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { PhoneOtpService } from '../otp/phone-otp.service';
+import { EmailOtpService } from '../otp/email-otp.service';
 import { TokenService } from './token.service';
 import {
   CustomerCompleteRegistrationDto,
@@ -24,10 +24,18 @@ import {
   ResetPasswordDto,
   VerifyPhoneRequestDto,
   VerifyPhoneConfirmDto,
+  VerifyEmailRequestDto,
+  VerifyEmailConfirmDto,
+  LinkEmailRequestDto,
+  LinkEmailVerifyDto,
+  LinkPhoneRequestDto,
+  LinkPhoneVerifyDto,
+  ChangePasswordDto,
 } from './dto';
 import { DeviceInfo, AuthResult } from './auth.types';
-import { AUTH_CONFIG, AUTH_ERROR } from './auth.constants';
+import { AUTH_CONFIG, AUTH_ERROR, AUTH_MESSAGES } from './auth.constants';
 import { maskPhone } from '../common/helpers/mask.helper';
+import { maskEmail } from '../common/helpers/mask.helper';
 
 @Injectable()
 export class CustomerAuthService {
@@ -36,57 +44,94 @@ export class CustomerAuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly phoneOtpService: PhoneOtpService,
+    private readonly emailOtpService: EmailOtpService,
     private readonly tokenService: TokenService,
   ) {}
 
   // ══════════════════════════════════════════════════════════════
-  // REGISTRATION — 3-STEP FLOW
+  // REGISTRATION — 3-STEP FLOW (Phone or Email)
   // ══════════════════════════════════════════════════════════════
 
-  // ─── Step 1: Request OTP ──────────────────────────────────────
+  /**
+   * Step 1: Request OTP for registration
+   * Supports both phone and email registration
+   */
   async requestRegistrationOtp(
     dto: CustomerRequestOtpDto,
     ipAddress?: string,
     userAgent?: string,
-  ): Promise<{ maskedPhone: string; expiresInSeconds: number }> {
-    // If already a full account, reject (tell them to login)
+  ): Promise<{ maskedTarget: string; expiresInSeconds: number }> {
+    const target = dto.type === 'phone' ? dto.value : dto.value.toLowerCase();
+
+    // Check if already registered (not a guest)
+    const whereClause =
+      dto.type === 'phone'
+        ? { phone: target, deletedAt: null }
+        : { email: target, deletedAt: null };
+
     const existing = await this.prisma.customer.findFirst({
-      where: { phone: dto.phone, deletedAt: null },
+      where: whereClause,
       select: { id: true, isGuest: true },
     });
 
     if (existing && !existing.isGuest) {
-      throw new ConflictException(AUTH_ERROR.CUSTOMER_PHONE_TAKEN);
+      const errorMessage =
+        dto.type === 'phone'
+          ? AUTH_ERROR.CUSTOMER_PHONE_TAKEN
+          : AUTH_ERROR.CUSTOMER_EMAIL_TAKEN;
+      throw new ConflictException(errorMessage);
     }
 
-    const result = await this.phoneOtpService.sendOtp({
-      target: dto.phone,
-      purpose: 'REGISTER_ACCOUNT',
-      ipAddress,
-      userAgent,
-    });
+    // Send OTP via appropriate channel
+    const result =
+      dto.type === 'phone'
+        ? await this.phoneOtpService.sendOtp({
+            target,
+            purpose: 'REGISTER_ACCOUNT',
+            ipAddress,
+            userAgent,
+          })
+        : await this.emailOtpService.sendOtp({
+            target,
+            purpose: 'REGISTER_ACCOUNT',
+            ipAddress,
+            userAgent,
+          });
 
     if (!result.success) {
       throw new BadRequestException(result.message ?? 'Failed to send OTP');
     }
 
     return {
-      maskedPhone: result.maskedTarget,
+      maskedTarget: result.maskedTarget,
       expiresInSeconds: result.expiresInSeconds,
     };
   }
 
-  // ─── Step 2: Verify OTP → registration token ──────────────────
+  /**
+   * Step 2: Verify OTP → issue registration token
+   */
   async verifyRegistrationOtp(
-    phone: string,
+    type: 'phone' | 'email',
+    value: string,
     code: string,
-  ): Promise<{ registrationToken: string; maskedPhone: string }> {
-    const otpResult = await this.phoneOtpService.verifyOtp({
-      target: phone,
-      purpose: 'REGISTER_ACCOUNT',
-      code,
-      consume: true, // consume so it can't be replayed
-    });
+  ): Promise<{ registrationToken: string; maskedTarget: string }> {
+    const target = type === 'phone' ? value : value.toLowerCase();
+
+    const otpResult =
+      type === 'phone'
+        ? await this.phoneOtpService.verifyOtp({
+            target,
+            purpose: 'REGISTER_ACCOUNT',
+            code,
+            consume: true,
+          })
+        : await this.emailOtpService.verifyOtp({
+            target,
+            purpose: 'REGISTER_ACCOUNT',
+            code,
+            consume: true,
+          });
 
     if (!otpResult.success) {
       throw new UnauthorizedException(
@@ -94,41 +139,58 @@ export class CustomerAuthService {
       );
     }
 
-    // Issue a short-lived registration token (15 min)
-    // This proves the phone was verified without issuing a full auth token
+    // Issue registration token
     const registrationToken =
-      this.tokenService.generateRegistrationToken(phone);
+      this.tokenService.generateRegistrationToken(target);
 
-    return {
-      registrationToken,
-      maskedPhone: maskPhone(phone),
-    };
+    const maskedTarget =
+      type === 'phone' ? maskPhone(target) : maskEmail(target);
+
+    return { registrationToken, maskedTarget };
   }
 
-  // ─── Step 3: Complete Registration ────────────────────────────
+  /**
+   * Step 3: Complete registration
+   */
   async completeRegistration(
     dto: CustomerCompleteRegistrationDto,
     deviceInfo: DeviceInfo,
   ): Promise<AuthResult> {
-    // Validate the registration token
+    // Verify registration token
     const tokenPayload = this.tokenService.verifyRegistrationToken(
       dto.registrationToken,
     );
-    const phone = tokenPayload.sub;
+    const verifiedValue = tokenPayload.sub;
+
+    // Determine if it's phone or email
+    const isEmail = verifiedValue.includes('@');
+    const isPhone = !isEmail;
 
     // Check for conflicts
-    const existingPhone = await this.prisma.customer.findFirst({
-      where: { phone, isGuest: false, deletedAt: null },
-    });
-    if (existingPhone)
-      throw new ConflictException(AUTH_ERROR.CUSTOMER_PHONE_TAKEN);
-
-    if (dto.email) {
+    if (isPhone) {
+      const existingPhone = await this.prisma.customer.findFirst({
+        where: { phone: verifiedValue, isGuest: false, deletedAt: null },
+      });
+      if (existingPhone) {
+        throw new ConflictException(AUTH_ERROR.CUSTOMER_PHONE_TAKEN);
+      }
+    } else {
       const existingEmail = await this.prisma.customer.findFirst({
+        where: { email: verifiedValue, isGuest: false, deletedAt: null },
+      });
+      if (existingEmail) {
+        throw new ConflictException(AUTH_ERROR.CUSTOMER_EMAIL_TAKEN);
+      }
+    }
+
+    // Check if optional email is provided (for phone registration)
+    if (dto.email && isPhone) {
+      const emailTaken = await this.prisma.customer.findFirst({
         where: { email: dto.email.toLowerCase(), deletedAt: null },
       });
-      if (existingEmail)
+      if (emailTaken) {
         throw new ConflictException(AUTH_ERROR.CUSTOMER_EMAIL_TAKEN);
+      }
     }
 
     const hashedPassword = await bcrypt.hash(
@@ -136,40 +198,48 @@ export class CustomerAuthService {
       AUTH_CONFIG.BCRYPT_ROUNDS,
     );
 
-    // Check if a guest account with this phone exists (upgrade it)
+    // Check if guest account exists (upgrade it)
+    const whereClause = isPhone
+      ? { phone: verifiedValue, isGuest: true, deletedAt: null }
+      : { email: verifiedValue, isGuest: true, deletedAt: null };
+
     const guestAccount = await this.prisma.customer.findFirst({
-      where: { phone, isGuest: true, deletedAt: null },
+      where: whereClause,
       select: { id: true },
     });
 
     let customerId: string;
 
     if (guestAccount) {
-      // Upgrade guest → full account (same ID, all orders preserved)
+      // Upgrade guest to full account
       const updated = await this.prisma.customer.update({
         where: { id: guestAccount.id },
         data: {
           firstName: dto.firstName.trim(),
           lastName: dto.lastName.trim(),
-          email: dto.email?.toLowerCase() ?? null,
+          email: isEmail ? verifiedValue : (dto.email?.toLowerCase() ?? null),
+          phone: isPhone ? verifiedValue : null,
           password: hashedPassword,
           isGuest: false,
-          phoneVerified: true,
+          phoneVerified: isPhone,
+          emailVerified: isEmail,
           isActive: true,
         },
         select: { id: true },
       });
       customerId = updated.id;
     } else {
+      // Create new account
       const created = await this.prisma.customer.create({
         data: {
           firstName: dto.firstName.trim(),
           lastName: dto.lastName.trim(),
-          phone,
-          email: dto.email?.toLowerCase() ?? null,
+          email: isEmail ? verifiedValue : (dto.email?.toLowerCase() ?? null),
+          phone: isPhone ? verifiedValue : null,
           password: hashedPassword,
           isGuest: false,
-          phoneVerified: true,
+          phoneVerified: isPhone,
+          emailVerified: isEmail,
           isActive: true,
         },
         select: { id: true },
@@ -196,7 +266,7 @@ export class CustomerAuthService {
       });
     }
 
-    this.logger.log(`Customer registered: ${phone}`);
+    this.logger.log(`Customer registered: ${verifiedValue}`);
 
     return this.tokenService.loginAndIssueTokens(
       'CUSTOMER',
@@ -209,42 +279,57 @@ export class CustomerAuthService {
   // LOGIN
   // ══════════════════════════════════════════════════════════════
 
-  // ─── Login with Password ──────────────────────────────────────
+  /**
+   * Login with password (phone or email)
+   */
   async loginWithPassword(
     dto: CustomerPasswordLoginDto,
     deviceInfo: DeviceInfo,
   ): Promise<AuthResult> {
+    const isEmail = dto.identifier.includes('@');
+    const identifier = isEmail ? dto.identifier.toLowerCase() : dto.identifier;
+
+    const whereClause = isEmail
+      ? { email: identifier, deletedAt: null }
+      : { phone: identifier, deletedAt: null };
+
     const customer = await this.prisma.customer.findFirst({
-      where: { phone: dto.phone, deletedAt: null },
+      where: whereClause,
       select: {
         id: true,
         password: true,
         isActive: true,
         isGuest: true,
         phoneVerified: true,
+        emailVerified: true,
         loginAttempts: true,
         lockedUntil: true,
       },
     });
 
-    if (!customer)
+    // Timing-safe check
+    const dummyHash =
+      '$2b$10$KbQiF2Xk5b9VYy8Ej3Z9UeZ5gVxF5D1ZxJHGtJwQ1xExampleDummyHash';
+    const hashToCompare = customer?.password ?? dummyHash;
+    const passwordValid = await bcrypt.compare(dto.password, hashToCompare);
+
+    if (!customer || !passwordValid) {
+      if (customer) {
+        await this.incrementLoginAttempts(customer.id);
+      }
       throw new UnauthorizedException(AUTH_ERROR.INVALID_CREDENTIALS);
+    }
 
     if (customer.lockedUntil && customer.lockedUntil > new Date()) {
       throw new UnauthorizedException(AUTH_ERROR.ACCOUNT_LOCKED);
     }
 
-    if (!customer.isActive)
+    if (!customer.isActive) {
       throw new UnauthorizedException(AUTH_ERROR.ACCOUNT_DISABLED);
+    }
 
     if (customer.isGuest || !customer.password) {
       throw new UnauthorizedException(AUTH_ERROR.CUSTOMER_IS_GUEST);
-    }
-
-    const valid = await bcrypt.compare(dto.password, customer.password);
-    if (!valid) {
-      await this.incrementLoginAttempts(customer.id);
-      throw new UnauthorizedException(AUTH_ERROR.INVALID_CREDENTIALS);
     }
 
     await this.prisma.customer.update({
@@ -264,46 +349,77 @@ export class CustomerAuthService {
     );
   }
 
-  // ─── Request OTP login ────────────────────────────────────────
+  /**
+   * Request OTP for login
+   */
   async requestLoginOtp(
     dto: CustomerOtpLoginRequestDto,
     ipAddress?: string,
     userAgent?: string,
-  ): Promise<{ maskedPhone: string; expiresInSeconds: number }> {
+  ): Promise<{ maskedTarget: string; expiresInSeconds: number }> {
+    const target = dto.type === 'phone' ? dto.value : dto.value.toLowerCase();
+
+    const whereClause =
+      dto.type === 'phone'
+        ? { phone: target, isGuest: false, deletedAt: null }
+        : { email: target, isGuest: false, deletedAt: null };
+
     const customer = await this.prisma.customer.findFirst({
-      where: { phone: dto.phone, isGuest: false, deletedAt: null },
+      where: whereClause,
       select: { id: true, isActive: true },
     });
 
-    // Don't reveal if account exists (prevent enumeration)
+    // Don't reveal if account exists
     if (!customer || !customer.isActive) {
-      return { maskedPhone: maskPhone(dto.phone), expiresInSeconds: 300 };
+      const maskedTarget =
+        dto.type === 'phone' ? maskPhone(target) : maskEmail(target);
+      return { maskedTarget, expiresInSeconds: 300 };
     }
 
-    const result = await this.phoneOtpService.sendOtp({
-      target: dto.phone,
-      purpose: 'LOGIN_OTP',
-      ipAddress,
-      userAgent,
-    });
+    const result =
+      dto.type === 'phone'
+        ? await this.phoneOtpService.sendOtp({
+            target,
+            purpose: 'LOGIN_OTP',
+            ipAddress,
+            userAgent,
+          })
+        : await this.emailOtpService.sendOtp({
+            target,
+            purpose: 'LOGIN_OTP',
+            ipAddress,
+            userAgent,
+          });
 
     return {
-      maskedPhone: result.maskedTarget,
+      maskedTarget: result.maskedTarget,
       expiresInSeconds: result.expiresInSeconds,
     };
   }
 
-  // ─── Verify OTP and login ─────────────────────────────────────
+  /**
+   * Verify OTP and login
+   */
   async loginWithOtp(
     dto: CustomerOtpLoginVerifyDto,
     deviceInfo: DeviceInfo,
   ): Promise<AuthResult> {
-    const otpResult = await this.phoneOtpService.verifyOtp({
-      target: dto.phone,
-      purpose: 'LOGIN_OTP',
-      code: dto.code,
-      consume: true,
-    });
+    const target = dto.type === 'phone' ? dto.value : dto.value.toLowerCase();
+
+    const otpResult =
+      dto.type === 'phone'
+        ? await this.phoneOtpService.verifyOtp({
+            target,
+            purpose: 'LOGIN_OTP',
+            code: dto.code,
+            consume: true,
+          })
+        : await this.emailOtpService.verifyOtp({
+            target,
+            purpose: 'LOGIN_OTP',
+            code: dto.code,
+            consume: true,
+          });
 
     if (!otpResult.success) {
       throw new UnauthorizedException(
@@ -311,8 +427,13 @@ export class CustomerAuthService {
       );
     }
 
+    const whereClause =
+      dto.type === 'phone'
+        ? { phone: target, isGuest: false, deletedAt: null }
+        : { email: target, isGuest: false, deletedAt: null };
+
     const customer = await this.prisma.customer.findFirst({
-      where: { phone: dto.phone, isGuest: false, deletedAt: null },
+      where: whereClause,
       select: { id: true, isActive: true },
     });
 
@@ -338,7 +459,7 @@ export class CustomerAuthService {
   }
 
   // ══════════════════════════════════════════════════════════════
-  // PHONE VERIFICATION (guests + registered)
+  // VERIFICATION (for existing users)
   // ══════════════════════════════════════════════════════════════
 
   async requestPhoneVerification(
@@ -377,10 +498,51 @@ export class CustomerAuthService {
       );
     }
 
-    // Mark phone as verified for any customer with this phone
     await this.prisma.customer.updateMany({
       where: { phone: dto.phone, deletedAt: null },
       data: { phoneVerified: true },
+    });
+  }
+
+  async requestEmailVerification(
+    dto: VerifyEmailRequestDto,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ maskedEmail: string; expiresInSeconds: number }> {
+    const result = await this.emailOtpService.sendOtp({
+      target: dto.email.toLowerCase(),
+      purpose: 'VERIFY_EMAIL',
+      ipAddress,
+      userAgent,
+    });
+
+    if (!result.success) {
+      throw new BadRequestException(result.message ?? 'Failed to send OTP');
+    }
+
+    return {
+      maskedEmail: result.maskedTarget,
+      expiresInSeconds: result.expiresInSeconds,
+    };
+  }
+
+  async confirmEmailVerification(dto: VerifyEmailConfirmDto): Promise<void> {
+    const otpResult = await this.emailOtpService.verifyOtp({
+      target: dto.email.toLowerCase(),
+      purpose: 'VERIFY_EMAIL',
+      code: dto.code,
+      consume: true,
+    });
+
+    if (!otpResult.success) {
+      throw new UnauthorizedException(
+        otpResult.message ?? AUTH_ERROR.OTP_INVALID,
+      );
+    }
+
+    await this.prisma.customer.updateMany({
+      where: { email: dto.email.toLowerCase(), deletedAt: null },
+      data: { emailVerified: true },
     });
   }
 
@@ -392,37 +554,64 @@ export class CustomerAuthService {
     dto: ForgotPasswordDto,
     ipAddress?: string,
     userAgent?: string,
-  ): Promise<{ maskedPhone: string; expiresInSeconds: number }> {
+  ): Promise<{ maskedTarget: string; expiresInSeconds: number }> {
+    const target = dto.type === 'phone' ? dto.value : dto.value.toLowerCase();
+
+    const whereClause =
+      dto.type === 'phone'
+        ? { phone: target, isGuest: false, deletedAt: null }
+        : { email: target, isGuest: false, deletedAt: null };
+
     const customer = await this.prisma.customer.findFirst({
-      where: { phone: dto.phone, isGuest: false, deletedAt: null },
+      where: whereClause,
       select: { id: true },
     });
 
     // Don't reveal if account doesn't exist
     if (!customer) {
-      return { maskedPhone: maskPhone(dto.phone), expiresInSeconds: 300 };
+      const maskedTarget =
+        dto.type === 'phone' ? maskPhone(target) : maskEmail(target);
+      return { maskedTarget, expiresInSeconds: 300 };
     }
 
-    const result = await this.phoneOtpService.sendOtp({
-      target: dto.phone,
-      purpose: 'RESET_PASSWORD',
-      ipAddress,
-      userAgent,
-    });
+    const result =
+      dto.type === 'phone'
+        ? await this.phoneOtpService.sendOtp({
+            target,
+            purpose: 'RESET_PASSWORD',
+            ipAddress,
+            userAgent,
+          })
+        : await this.emailOtpService.sendOtp({
+            target,
+            purpose: 'RESET_PASSWORD',
+            ipAddress,
+            userAgent,
+          });
 
     return {
-      maskedPhone: result.maskedTarget,
+      maskedTarget: result.maskedTarget,
       expiresInSeconds: result.expiresInSeconds,
     };
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<void> {
-    const otpResult = await this.phoneOtpService.verifyOtp({
-      target: dto.phone,
-      purpose: 'RESET_PASSWORD',
-      code: dto.code,
-      consume: true,
-    });
+    const target = dto.type === 'phone' ? dto.value : dto.value.toLowerCase();
+
+    const otpResult =
+      dto.type === 'phone'
+        ? await this.phoneOtpService.verifyOtp({
+            target,
+            purpose: 'RESET_PASSWORD',
+            code: dto.code,
+            consume: true,
+          })
+        : await this.emailOtpService.verifyOtp({
+            target,
+            purpose: 'RESET_PASSWORD',
+            code: dto.code,
+            consume: true,
+          });
 
     if (!otpResult.success) {
       throw new UnauthorizedException(
@@ -430,12 +619,19 @@ export class CustomerAuthService {
       );
     }
 
+    const whereClause =
+      dto.type === 'phone'
+        ? { phone: target, isGuest: false, deletedAt: null }
+        : { email: target, isGuest: false, deletedAt: null };
+
     const customer = await this.prisma.customer.findFirst({
-      where: { phone: dto.phone, isGuest: false, deletedAt: null },
+      where: whereClause,
       select: { id: true },
     });
 
-    if (!customer) throw new NotFoundException(AUTH_ERROR.CUSTOMER_NOT_FOUND);
+    if (!customer) {
+      throw new NotFoundException(AUTH_ERROR.CUSTOMER_NOT_FOUND);
+    }
 
     const hashedPassword = await bcrypt.hash(
       dto.newPassword,
@@ -447,22 +643,185 @@ export class CustomerAuthService {
       data: { password: hashedPassword },
     });
 
-    // Force re-login on all devices
+    // Revoke all sessions
     await this.tokenService.revokeAllOwnerTokens(
       'CUSTOMER',
       customer.id,
       'All_DEVICES',
     );
 
-    this.logger.log(`Password reset for customer: ${dto.phone}`);
+    this.logger.log(`Password reset for customer: ${target}`);
   }
 
-  // ─── Private helpers ──────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════
+  // ACCOUNT LINKING (Add email to phone account or vice versa)
+  // ══════════════════════════════════════════════════════════════
+
+  async requestLinkEmail(
+    customerId: string,
+    dto: LinkEmailRequestDto,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ maskedEmail: string; expiresInSeconds: number }> {
+    // Check if email already taken
+    const emailTaken = await this.prisma.customer.findFirst({
+      where: { email: dto.email.toLowerCase(), deletedAt: null },
+    });
+
+    if (emailTaken) {
+      throw new ConflictException(AUTH_ERROR.CUSTOMER_EMAIL_TAKEN);
+    }
+
+    const result = await this.emailOtpService.sendOtp({
+      target: dto.email.toLowerCase(),
+      purpose: 'VERIFY_EMAIL',
+      ipAddress,
+      userAgent,
+    });
+
+    if (!result.success) {
+      throw new BadRequestException(result.message ?? 'Failed to send OTP');
+    }
+
+    return {
+      maskedEmail: result.maskedTarget,
+      expiresInSeconds: result.expiresInSeconds,
+    };
+  }
+
+  async confirmLinkEmail(
+    customerId: string,
+    dto: LinkEmailVerifyDto,
+  ): Promise<void> {
+    const otpResult = await this.emailOtpService.verifyOtp({
+      target: dto.email.toLowerCase(),
+      purpose: 'VERIFY_EMAIL',
+      code: dto.code,
+      consume: true,
+    });
+
+    if (!otpResult.success) {
+      throw new UnauthorizedException(
+        otpResult.message ?? AUTH_ERROR.OTP_INVALID,
+      );
+    }
+
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        email: dto.email.toLowerCase(),
+        emailVerified: true,
+      },
+    });
+  }
+
+  async requestLinkPhone(
+    customerId: string,
+    dto: LinkPhoneRequestDto,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ maskedPhone: string; expiresInSeconds: number }> {
+    // Check if phone already taken
+    const phoneTaken = await this.prisma.customer.findFirst({
+      where: { phone: dto.phone, deletedAt: null },
+    });
+
+    if (phoneTaken) {
+      throw new ConflictException(AUTH_ERROR.CUSTOMER_PHONE_TAKEN);
+    }
+
+    const result = await this.phoneOtpService.sendOtp({
+      target: dto.phone,
+      purpose: 'VERIFY_PHONE',
+      ipAddress,
+      userAgent,
+    });
+
+    if (!result.success) {
+      throw new BadRequestException(result.message ?? 'Failed to send OTP');
+    }
+
+    return {
+      maskedPhone: result.maskedTarget,
+      expiresInSeconds: result.expiresInSeconds,
+    };
+  }
+
+  async confirmLinkPhone(
+    customerId: string,
+    dto: LinkPhoneVerifyDto,
+  ): Promise<void> {
+    const otpResult = await this.phoneOtpService.verifyOtp({
+      target: dto.phone,
+      purpose: 'VERIFY_PHONE',
+      code: dto.code,
+      consume: true,
+    });
+
+    if (!otpResult.success) {
+      throw new UnauthorizedException(
+        otpResult.message ?? AUTH_ERROR.OTP_INVALID,
+      );
+    }
+
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: {
+        phone: dto.phone,
+        phoneVerified: true,
+      },
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // PASSWORD CHANGE (Authenticated user)
+  // ══════════════════════════════════════════════════════════════
+
+  async changePassword(
+    customerId: string,
+    dto: ChangePasswordDto,
+  ): Promise<void> {
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { password: true },
+    });
+
+    if (!customer || !customer.password) {
+      throw new NotFoundException(AUTH_ERROR.CUSTOMER_NOT_FOUND);
+    }
+
+    const passwordValid = await bcrypt.compare(
+      dto.currentPassword,
+      customer.password,
+    );
+
+    if (!passwordValid) {
+      throw new UnauthorizedException(AUTH_ERROR.INVALID_CREDENTIALS);
+    }
+
+    const hashedPassword = await bcrypt.hash(
+      dto.newPassword,
+      AUTH_CONFIG.BCRYPT_ROUNDS,
+    );
+
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: { password: hashedPassword },
+    });
+
+    this.logger.log(`Password changed for customer: ${customerId}`);
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // HELPERS
+  // ══════════════════════════════════════════════════════════════
+
   private async incrementLoginAttempts(customerId: string): Promise<void> {
     const customer = await this.prisma.customer.findUnique({
       where: { id: customerId },
       select: { loginAttempts: true },
     });
+
     const newAttempts = (customer?.loginAttempts ?? 0) + 1;
     const shouldLock = newAttempts >= AUTH_CONFIG.MAX_LOGIN_ATTEMPTS;
 

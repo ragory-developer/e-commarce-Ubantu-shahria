@@ -9,31 +9,52 @@ import {
   MaxLength,
   Matches,
   ValidateNested,
+  IsIn,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 
+// ══════════════════════════════════════════════════════════════
+// REGISTRATION FLOW (Phone or Email)
+// ══════════════════════════════════════════════════════════════
+
 // ─── Step 1: Request OTP ──────────────────────────────────────
 export class CustomerRequestOtpDto {
   @ApiProperty({
+    example: 'phone',
+    description: 'Registration method: phone or email',
+    enum: ['phone', 'email'],
+  })
+  @IsIn(['phone', 'email'])
+  type!: 'phone' | 'email';
+
+  @ApiProperty({
     example: '01700000000',
-    description: 'Bangladesh phone number',
+    description:
+      'Phone number (if type=phone) or email address (if type=email)',
   })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(20)
+  @MaxLength(255)
   @Transform(({ value }) => value?.trim())
-  phone!: string;
+  value!: string;
 }
 
 // ─── Step 2: Verify OTP → returns registrationToken ──────────
 export class CustomerVerifyRegistrationOtpDto {
+  @ApiProperty({
+    example: 'phone',
+    enum: ['phone', 'email'],
+  })
+  @IsIn(['phone', 'email'])
+  type!: 'phone' | 'email';
+
   @ApiProperty({ example: '01700000000' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(20)
+  @MaxLength(255)
   @Transform(({ value }) => value?.trim())
-  phone!: string;
+  value!: string;
 
   @ApiProperty({ example: '123456', description: '6-digit OTP code' })
   @IsString()
@@ -161,14 +182,21 @@ export class CustomerCompleteRegistrationDto {
   deviceType?: string;
 }
 
-// ─── Password Login ───────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// LOGIN FLOW
+// ══════════════════════════════════════════════════════════════
+
+// ─── Password Login (Phone or Email) ──────────────────────────
 export class CustomerPasswordLoginDto {
-  @ApiProperty({ example: '01700000000' })
+  @ApiProperty({
+    example: '01700000000',
+    description: 'Phone number or email address',
+  })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(20)
+  @MaxLength(255)
   @Transform(({ value }) => value?.trim())
-  phone!: string;
+  identifier!: string;
 
   @ApiProperty({ example: 'SecureP@ss123' })
   @IsString()
@@ -195,24 +223,41 @@ export class CustomerPasswordLoginDto {
   deviceType?: string;
 }
 
-// ─── OTP Login Step 1 ─────────────────────────────────────────
+// ─── OTP Login Step 1: Request OTP ────────────────────────────
 export class CustomerOtpLoginRequestDto {
-  @ApiProperty({ example: '01700000000' })
+  @ApiProperty({
+    example: 'phone',
+    enum: ['phone', 'email'],
+  })
+  @IsIn(['phone', 'email'])
+  type!: 'phone' | 'email';
+
+  @ApiProperty({
+    example: '01700000000',
+    description: 'Phone number or email address',
+  })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(20)
+  @MaxLength(255)
   @Transform(({ value }) => value?.trim())
-  phone!: string;
+  value!: string;
 }
 
-// ─── OTP Login Step 2 ─────────────────────────────────────────
+// ─── OTP Login Step 2: Verify OTP ─────────────────────────────
 export class CustomerOtpLoginVerifyDto {
+  @ApiProperty({
+    example: 'phone',
+    enum: ['phone', 'email'],
+  })
+  @IsIn(['phone', 'email'])
+  type!: 'phone' | 'email';
+
   @ApiProperty({ example: '01700000000' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(20)
+  @MaxLength(255)
   @Transform(({ value }) => value?.trim())
-  phone!: string;
+  value!: string;
 
   @ApiProperty({ example: '123456' })
   @IsString()
@@ -239,7 +284,11 @@ export class CustomerOtpLoginVerifyDto {
   deviceType?: string;
 }
 
-// ─── Phone Verification (for guests/registered) ───────────────
+// ══════════════════════════════════════════════════════════════
+// VERIFICATION FLOWS
+// ══════════════════════════════════════════════════════════════
+
+// ─── Verify Phone (for existing users) ───────────────────────
 export class VerifyPhoneRequestDto {
   @ApiProperty({ example: '01700000000' })
   @IsString()
@@ -264,23 +313,64 @@ export class VerifyPhoneConfirmDto {
   code!: string;
 }
 
-// ─── Forgot / Reset Password ──────────────────────────────────
-export class ForgotPasswordDto {
-  @ApiProperty({ example: '01700000000' })
+// ─── Verify Email (for existing users) ───────────────────────
+export class VerifyEmailRequestDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsEmail()
+  @Transform(({ value }) => value?.toLowerCase().trim())
+  email!: string;
+}
+
+export class VerifyEmailConfirmDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsEmail()
+  @Transform(({ value }) => value?.toLowerCase().trim())
+  email!: string;
+
+  @ApiProperty({ example: '123456' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(20)
+  @Matches(/^\d{6}$/, { message: 'OTP must be exactly 6 digits' })
+  code!: string;
+}
+
+// ══════════════════════════════════════════════════════════════
+// PASSWORD RESET
+// ══════════════════════════════════════════════════════════════
+
+export class ForgotPasswordDto {
+  @ApiProperty({
+    example: 'phone',
+    enum: ['phone', 'email'],
+  })
+  @IsIn(['phone', 'email'])
+  type!: 'phone' | 'email';
+
+  @ApiProperty({
+    example: '01700000000',
+    description: 'Phone number or email address',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
   @Transform(({ value }) => value?.trim())
-  phone!: string;
+  value!: string;
 }
 
 export class ResetPasswordDto {
+  @ApiProperty({
+    example: 'phone',
+    enum: ['phone', 'email'],
+  })
+  @IsIn(['phone', 'email'])
+  type!: 'phone' | 'email';
+
   @ApiProperty({ example: '01700000000' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(20)
+  @MaxLength(255)
   @Transform(({ value }) => value?.trim())
-  phone!: string;
+  value!: string;
 
   @ApiProperty({ example: '123456' })
   @IsString()
@@ -295,7 +385,10 @@ export class ResetPasswordDto {
   newPassword!: string;
 }
 
-// ─── Shared Token DTOs ────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+// TOKEN & SESSION MANAGEMENT
+// ══════════════════════════════════════════════════════════════
+
 export class RefreshTokenDto {
   @ApiProperty({ description: 'The refresh token received during login' })
   @IsString()
@@ -314,4 +407,69 @@ export class LogoutDto {
   @IsString()
   @IsNotEmpty()
   refreshToken!: string;
+}
+
+// ══════════════════════════════════════════════════════════════
+// PROFILE MANAGEMENT
+// ══════════════════════════════════════════════════════════════
+
+export class ChangePasswordDto {
+  @ApiProperty({ example: 'OldP@ss123' })
+  @IsString()
+  @IsNotEmpty()
+  currentPassword!: string;
+
+  @ApiProperty({ example: 'NewP@ss123', minLength: 8 })
+  @IsString()
+  @MinLength(8)
+  @MaxLength(72)
+  newPassword!: string;
+}
+
+// ══════════════════════════════════════════════════════════════
+// ACCOUNT LINKING (Add email to phone account or vice versa)
+// ══════════════════════════════════════════════════════════════
+
+export class LinkEmailRequestDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsEmail()
+  @Transform(({ value }) => value?.toLowerCase().trim())
+  email!: string;
+}
+
+export class LinkEmailVerifyDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsEmail()
+  @Transform(({ value }) => value?.toLowerCase().trim())
+  email!: string;
+
+  @ApiProperty({ example: '123456' })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{6}$/, { message: 'OTP must be exactly 6 digits' })
+  code!: string;
+}
+
+export class LinkPhoneRequestDto {
+  @ApiProperty({ example: '01700000000' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
+  @Transform(({ value }) => value?.trim())
+  phone!: string;
+}
+
+export class LinkPhoneVerifyDto {
+  @ApiProperty({ example: '01700000000' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
+  @Transform(({ value }) => value?.trim())
+  phone!: string;
+
+  @ApiProperty({ example: '123456' })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{6}$/, { message: 'OTP must be exactly 6 digits' })
+  code!: string;
 }
