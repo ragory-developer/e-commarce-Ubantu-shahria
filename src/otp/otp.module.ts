@@ -10,10 +10,12 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { OtpService } from './otp.service';
 import { EmailOtpService } from './email-otp.service';
 import { PhoneOtpService } from './phone-otp.service';
+import { OtpController } from './otp.controller';
 
 @Module({
   imports: [ConfigModule, PrismaModule],
   providers: [OtpService, EmailOtpService, PhoneOtpService],
   exports: [OtpService, EmailOtpService, PhoneOtpService],
+  controllers: [OtpController],
 })
 export class OtpModule {}

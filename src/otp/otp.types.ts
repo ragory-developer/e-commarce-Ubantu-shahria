@@ -28,6 +28,7 @@ export interface SendOtpResult {
   maskedTarget: string;
   expiresInSeconds: number;
   resendAfterSeconds: number;
+  channel: OtpChannel;
   message?: string;
 }
 

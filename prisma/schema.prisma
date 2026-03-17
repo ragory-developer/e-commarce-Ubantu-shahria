@@ -378,8 +378,9 @@ model Category {
 model CheckoutSession {
   id String @id @default(cuid())
 
-  customerId String? @map("customer_id")
-  sessionId  String? @map("session_id")
+  customerId String?   @map("customer_id")
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  sessionId  String?   @map("session_id")
 
   // Immutable cart snapshot at checkout moment
   cartSnapshot Json @map("cart_snapshot") @db.JsonB
