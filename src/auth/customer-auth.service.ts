@@ -33,7 +33,7 @@ import {
   ChangePasswordDto,
 } from './dto';
 import { DeviceInfo, AuthResult } from './auth.types';
-import { AUTH_CONFIG, AUTH_ERROR, AUTH_MESSAGES } from './auth.constants';
+import { AUTH_CONFIG, AUTH_ERROR } from './auth.constants';
 import { maskPhone } from '../common/helpers/mask.helper';
 import { maskEmail } from '../common/helpers/mask.helper';
 
@@ -258,7 +258,9 @@ export class CustomerAuthService {
           ...(dto.address.city && {
             city: { connect: { id: dto.address.city } },
           }),
-          state: dto.address.state,
+          ...(dto.address.state && {
+            state: { connect: { id: dto.address.state } },
+          }),
           road: dto.address.road ?? '',
           zip: dto.address.zip,
           country: dto.address.country,

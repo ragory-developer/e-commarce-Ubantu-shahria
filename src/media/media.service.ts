@@ -681,7 +681,7 @@ export class MediaService {
       usage: media.entityMedia.map((em) => ({
         entityType: em.entityType,
         entityId: em.entityId,
-        purpose: em.purpose,
+        purpose: em.purpose ?? undefined,
         isMain: em.isMain,
       })),
     };
