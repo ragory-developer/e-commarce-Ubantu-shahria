@@ -19,6 +19,7 @@ export const AUTH_CONFIG = {
   SUPER_ADMIN_PASSWORD: process.env.SUPER_ADMIN_PASSWORD ?? '',
   SUPER_ADMIN_FIRST_NAME: process.env.SUPER_ADMIN_FIRST_NAME ?? 'Super',
   SUPER_ADMIN_LAST_NAME: process.env.SUPER_ADMIN_LAST_NAME ?? 'Admin',
+  SUPER_ADMIN_PHONE_NUMBER: '01720275168',
 } as const;
 
 export const AUTH_ERROR = {

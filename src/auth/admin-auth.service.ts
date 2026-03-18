@@ -117,6 +117,7 @@ export class AdminAuthService {
         role: 'SUPERADMIN',
         permissions: Object.values(AdminPermission),
         isActive: true,
+        phone: AUTH_CONFIG.SUPER_ADMIN_PHONE_NUMBER,
       },
     });
 

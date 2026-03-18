@@ -564,7 +564,7 @@ export class MediaService {
 
     return links.map((link) => ({
       ...this.mapMediaToDto(link.media as any),
-      purpose: link.purpose,
+      purpose: link.purpose ?? undefined,
       position: link.position,
       isMain: link.isMain,
     }));
