@@ -234,8 +234,8 @@ export class CustomerAuthService {
         data: {
           firstName: dto.firstName.trim(),
           lastName: dto.lastName.trim(),
-          email: isEmail ? verifiedValue : (dto.email?.toLowerCase() ?? null),
-          phone: isPhone ? verifiedValue : null,
+          ...(isEmail && { email: verifiedValue }),
+          ...(isPhone && { phone: verifiedValue }),
           password: hashedPassword,
           isGuest: false,
           phoneVerified: isPhone,

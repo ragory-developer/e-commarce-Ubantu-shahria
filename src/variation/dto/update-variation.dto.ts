@@ -4,9 +4,7 @@ import {
   IsString,
   IsOptional,
   IsBoolean,
-  IsInt,
   IsEnum,
-  Min,
   MaxLength,
   IsObject,
 } from 'class-validator';
@@ -31,13 +29,6 @@ export class UpdateVariationDto {
   @IsOptional()
   @IsBoolean()
   isGlobal?: boolean;
-
-  @ApiPropertyOptional({ example: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  position?: number;
 
   @ApiPropertyOptional({ type: Object })
   @IsOptional()

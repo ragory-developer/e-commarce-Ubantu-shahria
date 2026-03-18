@@ -22,7 +22,7 @@ import {
   UpdateVariationValueDto,
   ReorderValuesDto,
 } from './dto';
-import { Prisma, VariationType } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 function slugify(text: string): string {
   return text
@@ -103,7 +103,6 @@ export class VariationService {
         name: dto.name,
         type: dto.type,
         isGlobal: dto.isGlobal ?? true,
-        position: dto.position ?? 0,
         translations: toJsonInput(dto.translations),
         createdBy,
       },
@@ -180,7 +179,7 @@ export class VariationService {
             select: { values: true, productVariations: true },
           },
         },
-        orderBy: { position: 'asc' },
+        orderBy: { createdAt: 'asc' },
         skip: dto.skip,
         take: dto.take,
       }),
@@ -250,11 +249,9 @@ export class VariationService {
       throw new NotFoundException({
         message: 'Variation not found',
         resourceId: id,
-        resource: 'Variation',
       });
     }
 
-    // Check name conflict
     if (dto.name && dto.name.toLowerCase() !== existing.name.toLowerCase()) {
       const nameExists = await this.prisma.variation.findFirst({
         where: {
@@ -266,9 +263,8 @@ export class VariationService {
       });
       if (nameExists) {
         throw new ConflictException({
-          message: `Variation with name "${dto.name}" already exists`,
+          message: `Variation "${dto.name}" already exists`,
           field: 'name',
-          conflictingId: nameExists.id,
         });
       }
     }
@@ -286,7 +282,7 @@ export class VariationService {
     }
     if (dto.type !== undefined) updateData.type = dto.type;
     if (dto.isGlobal !== undefined) updateData.isGlobal = dto.isGlobal;
-    if (dto.position !== undefined) updateData.position = dto.position;
+    // FIXED: removed dto.position — Variation has no position field
     if (dto.translations !== undefined)
       updateData.translations = toJsonInput(dto.translations);
 

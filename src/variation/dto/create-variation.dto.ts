@@ -5,10 +5,8 @@ import {
   IsNotEmpty,
   IsOptional,
   IsBoolean,
-  IsInt,
   IsEnum,
   IsArray,
-  Min,
   MaxLength,
   IsObject,
   ValidateNested,
@@ -34,13 +32,6 @@ export class CreateVariationDto {
   @IsOptional()
   @IsBoolean()
   isGlobal?: boolean;
-
-  @ApiPropertyOptional({ example: 0, default: 0 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  position?: number;
 
   @ApiPropertyOptional({ type: Object, example: { bn: { name: 'সাইজ' } } })
   @IsOptional()

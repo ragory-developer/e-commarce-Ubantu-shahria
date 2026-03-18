@@ -10,10 +10,9 @@ import {
   Max,
   IsIn,
   IsEnum,
-  ValidateNested,
-  Type,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 /**
  * ─────────────────────────────────────────────────────────────

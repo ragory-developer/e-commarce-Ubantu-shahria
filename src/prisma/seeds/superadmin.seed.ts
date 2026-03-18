@@ -8,6 +8,7 @@ async function main() {
   const password = process.env.SUPER_ADMIN_PASSWORD || 'admin@example.com';
   const firstName = process.env.SUPER_ADMIN_FIRST_NAME || 'Super';
   const lastName = process.env.SUPER_ADMIN_LAST_NAME || 'Admin';
+  const phone = process.env.SUPER_ADMIN_PHONE || '+8801700000000'; // ← FIXED: was missing
   const saltRounds = parseInt(process.env.BCRYPT_ROUNDS || '12', 10);
 
   console.log('Seeding super admin:', email);

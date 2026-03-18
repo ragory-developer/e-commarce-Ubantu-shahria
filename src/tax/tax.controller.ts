@@ -20,7 +20,6 @@ import {
   ApiResponse,
   ApiParam,
   ApiExtraModels,
-  getSchemaPath,
 } from '@nestjs/swagger';
 import { TaxService } from './tax.service';
 import {
@@ -32,6 +31,8 @@ import {
   ListTaxRatesDto,
 } from './dto';
 import { UserType } from '../common/decorators/user-type.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { RequestUser } from '../auth/auth.types';
 
 @ApiTags('Tax Management')
 @ApiBearerAuth('access-token')
