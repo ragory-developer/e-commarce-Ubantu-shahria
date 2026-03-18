@@ -240,7 +240,6 @@ export class AddressService {
         id: cityId,
         divisionId,
         isActive: true,
-        deletedAt: null,
       },
     });
     if (!city) {
@@ -255,7 +254,6 @@ export class AddressService {
         id: areaId,
         cityId,
         isActive: true,
-        deletedAt: null,
       },
     });
     if (!area) {

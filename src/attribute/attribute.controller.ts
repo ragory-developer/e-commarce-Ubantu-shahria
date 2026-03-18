@@ -1,3 +1,5 @@
+// ─── src/attribute/attribute.controller.ts ───────────────────
+
 import {
   Controller,
   Get,
@@ -15,8 +17,8 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiResponse,
 } from '@nestjs/swagger';
-
 import { AttributeService } from './attribute.service';
 import {
   CreateAttributeDto,
@@ -24,13 +26,12 @@ import {
   ListAttributesDto,
   AddAttributeValuesDto,
   UpdateAttributeValuesDto,
+  ReorderAttributeValuesDto,
 } from './dto';
-
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { UserType } from '../common/decorators/user-type.decorator';
 import { Public } from '../common/decorators/public.decorator';
-
 import type { RequestUser } from '../auth/auth.types';
 import { AdminPermission } from '@prisma/client';
 
@@ -39,109 +40,100 @@ import { AdminPermission } from '@prisma/client';
 export class AttributeController {
   constructor(private readonly attributeService: AttributeService) {}
 
-  // CREATE ATTRIBUTE
   @Post()
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
-  @ApiOperation({
-    summary: 'Create a new attribute',
-    description:
-      'e.g., "Brand", "Processor", "Color". Attribute must belong to an attribute set.',
-  })
+  @Permissions(AdminPermission.PRODUCT_CREATE)
+  @ApiOperation({ summary: 'Create a new attribute in an attribute set' })
+  @ApiResponse({ status: 201, description: 'Attribute created' })
+  @ApiResponse({ status: 404, description: 'Attribute set not found' })
+  @ApiResponse({ status: 409, description: 'Slug conflict within set' })
   async create(
     @Body() dto: CreateAttributeDto,
     @CurrentUser() user: RequestUser,
   ) {
     const data = await this.attributeService.create(dto, user.id);
-    return {
-      message: 'Attribute created successfully',
-      data,
-    };
+    return { success: true, message: 'Attribute created successfully', data };
   }
 
-  // GET ALL ATTRIBUTES
   @Get()
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
+  @Permissions(AdminPermission.PRODUCT_READ)
   @ApiOperation({
-    summary: 'List all attributes with pagination and filter by attribute set',
+    summary: 'List all attributes (admin)',
+    description: 'Filter by setId, type. Paginated.',
   })
   async findAll(@Query() dto: ListAttributesDto) {
     const result = await this.attributeService.findAll(dto);
     return {
+      success: true,
       message: 'Attributes retrieved successfully',
-      data: result.data,
-      meta: result.meta,
-      total: result.total,
+      ...result,
     };
   }
 
-  // GET ATTRIBUTES BY ATTRIBUTE SET
-  @Get('attribute-set/:attributeSetId')
+  @Get('by-set/:attributeSetId')
   @Public()
   @ApiParam({ name: 'attributeSetId', description: 'Attribute Set ID' })
   @ApiOperation({
-    summary: 'Get all attributes in a set (public)',
-    description: 'Returns attributes with their values',
+    summary: 'Get all attributes (with values) for a set (public)',
   })
-  async findByAttributeSet(@Param('attributeSetId') attributeSetId: string) {
+  @ApiResponse({ status: 200, description: 'Attributes found' })
+  @ApiResponse({ status: 404, description: 'Set not found' })
+  async findBySet(@Param('attributeSetId') attributeSetId: string) {
     const data = await this.attributeService.findByAttributeSet(attributeSetId);
     return {
+      success: true,
       message: 'Attributes retrieved successfully',
       data,
     };
   }
 
-  // GET ATTRIBUTE BY ID
   @Get(':id')
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
   @ApiParam({ name: 'id', description: 'Attribute ID' })
-  @ApiOperation({
-    summary: 'Get attribute with all its values',
-  })
+  @ApiOperation({ summary: 'Get attribute by ID with all values (admin)' })
+  @ApiResponse({ status: 200, description: 'Attribute found' })
+  @ApiResponse({ status: 404, description: 'Attribute not found' })
   async findOne(@Param('id') id: string) {
     const data = await this.attributeService.findOne(id);
-    return {
-      message: 'Attribute retrieved successfully',
-      data,
-    };
+    return { success: true, message: 'Attribute retrieved successfully', data };
   }
 
-  // UPDATE ATTRIBUTE
   @Patch(':id')
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
+  @Permissions(AdminPermission.PRODUCT_UPDATE)
   @ApiParam({ name: 'id', description: 'Attribute ID' })
   @ApiOperation({
-    summary: 'Update attribute (name, type, slug, position, translations)',
+    summary: 'Update attribute metadata (name, type, position, translations)',
   })
+  @ApiResponse({ status: 200, description: 'Attribute updated' })
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateAttributeDto,
     @CurrentUser() user: RequestUser,
   ) {
     const data = await this.attributeService.update(id, dto, user.id);
-    return {
-      message: 'Attribute updated successfully',
-      data,
-    };
+    return { success: true, message: 'Attribute updated successfully', data };
   }
 
-  // ADD ATTRIBUTE VALUES
+  // ─── VALUES ──────────────────────────────────────────────────
+
   @Post(':id/values')
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
-  @HttpCode(HttpStatus.CREATED)
+  @Permissions(AdminPermission.PRODUCT_CREATE)
   @ApiParam({ name: 'id', description: 'Attribute ID' })
   @ApiOperation({
-    summary: 'Add values to an attribute',
-    description: 'e.g., add colors ["Red", "Blue", "Green"] to Color attribute',
+    summary: 'Add values to attribute (batch)',
+    description:
+      'Duplicates are automatically skipped. Returns added + skipped counts.',
   })
+  @ApiResponse({ status: 201, description: 'Values added' })
+  @ApiResponse({ status: 404, description: 'Attribute not found' })
   async addValues(
     @Param('id') id: string,
     @Body() dto: AddAttributeValuesDto,
@@ -149,43 +141,60 @@ export class AttributeController {
   ) {
     const data = await this.attributeService.addValues(id, dto, user.id);
     return {
-      message: `Added ${data.length} values to attribute`,
+      success: true,
+      message: `${data.summary.added} value(s) added, ${data.summary.skippedDuplicates} duplicate(s) skipped`,
       data,
     };
   }
 
-  // UPDATE ATTRIBUTE VALUES
   @Patch(':id/values')
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
+  @Permissions(AdminPermission.PRODUCT_UPDATE)
   @ApiParam({ name: 'id', description: 'Attribute ID' })
   @ApiOperation({
-    summary: 'Update/replace all attribute values',
+    summary:
+      'Batch update attribute values (value, label, hexColor, position, translations)',
   })
+  @ApiResponse({ status: 200, description: 'Values updated' })
   async updateValues(
     @Param('id') id: string,
     @Body() dto: UpdateAttributeValuesDto,
     @CurrentUser() user: RequestUser,
   ) {
     const data = await this.attributeService.updateValues(id, dto, user.id);
-    return {
-      message: 'Attribute values updated successfully',
-      data,
-    };
+    return { success: true, message: `${data.length} value(s) updated`, data };
   }
 
-  // DELETE ATTRIBUTE VALUE
+  @Patch(':id/values/reorder')
+  @ApiBearerAuth('access-token')
+  @UserType('ADMIN')
+  @Permissions(AdminPermission.PRODUCT_UPDATE)
+  @HttpCode(HttpStatus.OK)
+  @ApiParam({ name: 'id', description: 'Attribute ID' })
+  @ApiOperation({ summary: 'Reorder attribute values' })
+  @ApiResponse({ status: 200, description: 'Values reordered' })
+  async reorderValues(
+    @Param('id') id: string,
+    @Body() dto: ReorderAttributeValuesDto,
+  ) {
+    const data = await this.attributeService.reorderValues(id, dto);
+    return { success: true, message: 'Values reordered successfully', data };
+  }
+
   @Delete(':id/values/:valueId')
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
+  @Permissions(AdminPermission.PRODUCT_DELETE)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: 'id', description: 'Attribute ID' })
   @ApiParam({ name: 'valueId', description: 'Attribute Value ID' })
   @ApiOperation({
-    summary: 'Delete an attribute value (soft delete)',
+    summary: 'Delete attribute value (soft delete)',
+    description: 'Blocked if value is used by products.',
   })
+  @ApiResponse({ status: 200, description: 'Value deleted' })
+  @ApiResponse({ status: 400, description: 'Value is in use by products' })
   async deleteValue(
     @Param('id') id: string,
     @Param('valueId') valueId: string,
@@ -193,24 +202,28 @@ export class AttributeController {
   ) {
     await this.attributeService.deleteValue(id, valueId, user.id);
     return {
+      success: true,
       message: 'Attribute value deleted successfully',
       data: null,
     };
   }
 
-  // DELETE ATTRIBUTE
   @Delete(':id')
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
+  @Permissions(AdminPermission.PRODUCT_DELETE)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: 'id', description: 'Attribute ID' })
   @ApiOperation({
-    summary: 'Delete attribute (soft delete)',
+    summary: 'Delete attribute + all its values (soft delete)',
+    description: 'Blocked if used by products.',
   })
+  @ApiResponse({ status: 200, description: 'Attribute deleted' })
+  @ApiResponse({ status: 400, description: 'Attribute is in use by products' })
   async remove(@Param('id') id: string, @CurrentUser() user: RequestUser) {
     await this.attributeService.remove(id, user.id);
     return {
+      success: true,
       message: 'Attribute deleted successfully',
       data: null,
     };

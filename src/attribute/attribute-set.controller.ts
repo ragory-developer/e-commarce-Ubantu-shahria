@@ -1,3 +1,5 @@
+// ─── src/attribute/attribute-set.controller.ts ───────────────
+
 import {
   Controller,
   Get,
@@ -15,6 +17,7 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiResponse,
 } from '@nestjs/swagger';
 import { AttributeSetService } from './attribute-set.service';
 import {
@@ -34,91 +37,85 @@ import { AdminPermission } from '@prisma/client';
 export class AttributeSetController {
   constructor(private readonly attributeSetService: AttributeSetService) {}
 
-  // ══════════════════════════════════════════════════════════════
-  // CREATE ATTRIBUTE SET
-  // ══════════════════════════════════════════════════════════════
   @Post()
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
+  @Permissions(AdminPermission.PRODUCT_CREATE)
   @ApiOperation({
-    summary: 'Create a new attribute set',
-    description: 'e.g., "Laptop Specifications", "Watch Specifications"',
+    summary: 'Create attribute set',
+    description: 'e.g. "Laptop Specifications", "Clothing Properties"',
   })
+  @ApiResponse({ status: 201, description: 'Attribute set created' })
+  @ApiResponse({ status: 409, description: 'Name or slug conflict' })
   async create(
     @Body() dto: CreateAttributeSetDto,
     @CurrentUser() user: RequestUser,
   ) {
     const data = await this.attributeSetService.create(dto, user.id);
     return {
+      success: true,
       message: 'Attribute set created successfully',
       data,
     };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // GET ALL ATTRIBUTE SETS
-  // ══════════════════════════════════════════════════════════════
   @Get()
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
-  @ApiOperation({ summary: 'List all attribute sets with pagination' })
+  @Permissions(AdminPermission.PRODUCT_READ)
+  @ApiOperation({ summary: 'List all attribute sets (admin)' })
   async findAll(@Query() dto: ListAttributeSetsDto) {
     const result = await this.attributeSetService.findAll(dto);
     return {
+      success: true,
       message: 'Attribute sets retrieved successfully',
-      data: result.data,
-      meta: result.meta,
-      total: result.total,
+      ...result,
     };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // GET ATTRIBUTE SET BY ID
-  // ══════════════════════════════════════════════════════════════
+  @Get('slug/:slug')
+  @Public()
+  @ApiParam({ name: 'slug', example: 'laptop-specifications' })
+  @ApiOperation({
+    summary: 'Get attribute set by slug with all attributes & values (public)',
+  })
+  @ApiResponse({ status: 200, description: 'Attribute set found' })
+  @ApiResponse({ status: 404, description: 'Attribute set not found' })
+  async findBySlug(@Param('slug') slug: string) {
+    const data = await this.attributeSetService.findBySlug(slug);
+    return {
+      success: true,
+      message: 'Attribute set retrieved successfully',
+      data,
+    };
+  }
+
   @Get(':id')
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
   @ApiParam({ name: 'id', description: 'Attribute Set ID' })
   @ApiOperation({
-    summary: 'Get attribute set with all its attributes and values',
+    summary: 'Get attribute set by ID with all attributes & values (admin)',
   })
+  @ApiResponse({ status: 200, description: 'Attribute set found' })
+  @ApiResponse({ status: 404, description: 'Attribute set not found' })
   async findOne(@Param('id') id: string) {
     const data = await this.attributeSetService.findOne(id);
     return {
+      success: true,
       message: 'Attribute set retrieved successfully',
       data,
     };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // GET ATTRIBUTE SET BY SLUG
-  // ══════════════════════════════════════════════════════════════
-  @Get('slug/:slug')
-  @Public()
-  @ApiParam({ name: 'slug', description: 'Attribute Set slug' })
-  @ApiOperation({
-    summary: 'Get attribute set by slug (public)',
-    description: 'Returns full attribute structure with all values',
-  })
-  async findBySlug(@Param('slug') slug: string) {
-    const data = await this.attributeSetService.findBySlug(slug);
-    return {
-      message: 'Attribute set retrieved successfully',
-      data,
-    };
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  // UPDATE ATTRIBUTE SET
-  // ══════════════════════════════════════════════════════════════
   @Patch(':id')
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
+  @Permissions(AdminPermission.PRODUCT_UPDATE)
   @ApiParam({ name: 'id', description: 'Attribute Set ID' })
-  @ApiOperation({ summary: 'Update attribute set name/slug/translations' })
+  @ApiOperation({ summary: 'Update attribute set' })
+  @ApiResponse({ status: 200, description: 'Attribute set updated' })
+  @ApiResponse({ status: 409, description: 'Name or slug conflict' })
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateAttributeSetDto,
@@ -126,26 +123,30 @@ export class AttributeSetController {
   ) {
     const data = await this.attributeSetService.update(id, dto, user.id);
     return {
+      success: true,
       message: 'Attribute set updated successfully',
       data,
     };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // DELETE ATTRIBUTE SET
-  // ══════════════════════════════════════════════════════════════
   @Delete(':id')
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
+  @Permissions(AdminPermission.PRODUCT_DELETE)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: 'id', description: 'Attribute Set ID' })
   @ApiOperation({
-    summary: 'Delete attribute set (soft delete)',
-    description: 'Cannot delete if attributes are in use by products',
+    summary: 'Delete attribute set',
+    description: 'Blocked if set has attributes.',
   })
+  @ApiResponse({ status: 200, description: 'Attribute set deleted' })
+  @ApiResponse({ status: 400, description: 'Has attributes — cannot delete' })
   async remove(@Param('id') id: string, @CurrentUser() user: RequestUser) {
     await this.attributeSetService.remove(id, user.id);
-    return { message: 'Attribute set deleted successfully', data: null };
+    return {
+      success: true,
+      message: 'Attribute set deleted successfully',
+      data: null,
+    };
   }
 }

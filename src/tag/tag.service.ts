@@ -1,3 +1,5 @@
+// ─── src/tag/tag.service.ts ───────────────────────────────────
+
 import {
   Injectable,
   NotFoundException,
@@ -5,10 +7,14 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
-import { CreateTagDto, UpdateTagDto, ListTagsDto } from './dto';
+import {
+  CreateTagDto,
+  UpdateTagDto,
+  ListTagsDto,
+  BulkDeleteTagsDto,
+} from './dto';
 
 @Injectable()
 export class TagService {
@@ -19,24 +25,45 @@ export class TagService {
   // ══════════════════════════════════════════════════════════════
   // CREATE TAG
   // ══════════════════════════════════════════════════════════════
-  async create(dto: CreateTagDto, createdBy: string): Promise<object> {
+  async create(dto: CreateTagDto, createdBy: string) {
+    // Check slug uniqueness (case-insensitive)
     const existingSlug = await this.prisma.tag.findFirst({
-      where: { slug: dto.slug, deletedAt: null },
-      select: { id: true },
+      where: { slug: dto.slug.toLowerCase(), deletedAt: null },
+      select: { id: true, slug: true },
     });
 
     if (existingSlug) {
-      throw new ConflictException('Tag with this slug already exists');
+      throw new ConflictException({
+        message: 'Tag with this slug already exists',
+        field: 'slug',
+        conflictingId: existingSlug.id,
+      });
+    }
+
+    // Check name uniqueness (case-insensitive)
+    const existingName = await this.prisma.tag.findFirst({
+      where: {
+        name: { equals: dto.name, mode: 'insensitive' },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (existingName) {
+      throw new ConflictException({
+        message: 'Tag with this name already exists',
+        field: 'name',
+        conflictingId: existingName.id,
+      });
     }
 
     const tag = await this.prisma.tag.create({
       data: {
         name: dto.name,
-        slug: dto.slug,
-        translations:
-          dto.translations !== undefined
-            ? (dto.translations as Prisma.InputJsonValue)
-            : Prisma.JsonNull,
+        slug: dto.slug.toLowerCase(),
+        translations: dto.translations
+          ? (dto.translations as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
         createdBy,
       },
       select: {
@@ -46,29 +73,36 @@ export class TagService {
         translations: true,
         createdAt: true,
         updatedAt: true,
+        createdBy: true,
+        _count: { select: { products: true } },
       },
     });
 
-    this.logger.log(`Tag created: ${tag.slug} by ${createdBy}`);
-
+    this.logger.log(`Tag created: "${tag.name}" (${tag.slug}) by ${createdBy}`);
     return tag;
   }
 
   // ══════════════════════════════════════════════════════════════
-  // GET ALL TAGS
+  // GET ALL TAGS (paginated + search + sort)
   // ══════════════════════════════════════════════════════════════
-  async findAll(
-    dto: ListTagsDto,
-  ): Promise<{ data: object[]; total: number; meta: object }> {
-    const where = {
+  async findAll(dto: ListTagsDto) {
+    const where: Prisma.TagWhereInput = {
       deletedAt: null,
       ...(dto.search && {
         OR: [
-          { name: { contains: dto.search, mode: 'insensitive' as const } },
-          { slug: { contains: dto.search, mode: 'insensitive' as const } },
+          { name: { contains: dto.search, mode: 'insensitive' } },
+          { slug: { contains: dto.search, mode: 'insensitive' } },
         ],
       }),
     };
+
+    // Build orderBy
+    const orderBy: Prisma.TagOrderByWithRelationInput =
+      dto.sortBy === 'name'
+        ? { name: dto.sortOrder ?? 'asc' }
+        : dto.sortBy === 'slug'
+          ? { slug: dto.sortOrder ?? 'asc' }
+          : { createdAt: dto.sortOrder ?? 'desc' };
 
     const [data, total] = await Promise.all([
       this.prisma.tag.findMany({
@@ -80,17 +114,12 @@ export class TagService {
           translations: true,
           createdAt: true,
           updatedAt: true,
-          _count: {
-            select: {
-              products: true,
-            },
-          },
+          _count: { select: { products: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy,
         skip: dto.skip,
         take: dto.take,
       }),
-
       this.prisma.tag.count({ where }),
     ]);
 
@@ -101,7 +130,8 @@ export class TagService {
         skip: dto.skip,
         take: dto.take,
         page: Math.floor(dto.skip / dto.take) + 1,
-        pageCount: Math.ceil(total / dto.take),
+        pageCount: Math.ceil(total / dto.take) || 1,
+        hasMore: dto.skip + dto.take < total,
       },
     };
   }
@@ -109,7 +139,7 @@ export class TagService {
   // ══════════════════════════════════════════════════════════════
   // GET TAG BY ID
   // ══════════════════════════════════════════════════════════════
-  async findOne(id: string): Promise<object> {
+  async findOne(id: string) {
     const tag = await this.prisma.tag.findFirst({
       where: { id, deletedAt: null },
       select: {
@@ -121,16 +151,16 @@ export class TagService {
         updatedAt: true,
         createdBy: true,
         updatedBy: true,
-        _count: {
-          select: {
-            products: true,
-          },
-        },
+        _count: { select: { products: true } },
       },
     });
 
     if (!tag) {
-      throw new NotFoundException('Tag not found');
+      throw new NotFoundException({
+        message: 'Tag not found',
+        resourceId: id,
+        resource: 'Tag',
+      });
     }
 
     return tag;
@@ -139,9 +169,9 @@ export class TagService {
   // ══════════════════════════════════════════════════════════════
   // GET TAG BY SLUG
   // ══════════════════════════════════════════════════════════════
-  async findBySlug(slug: string): Promise<object> {
+  async findBySlug(slug: string) {
     const tag = await this.prisma.tag.findFirst({
-      where: { slug, deletedAt: null },
+      where: { slug: slug.toLowerCase(), deletedAt: null },
       select: {
         id: true,
         name: true,
@@ -149,42 +179,64 @@ export class TagService {
         translations: true,
         createdAt: true,
         updatedAt: true,
-        _count: {
-          select: {
-            products: true,
-          },
-        },
+        _count: { select: { products: true } },
       },
     });
 
     if (!tag) {
-      throw new NotFoundException('Tag not found');
+      throw new NotFoundException({
+        message: 'Tag not found',
+        resourceSlug: slug,
+        resource: 'Tag',
+      });
     }
 
     return tag;
   }
 
   // ══════════════════════════════════════════════════════════════
+  // GET POPULAR TAGS (by product count)
+  // ══════════════════════════════════════════════════════════════
+  async findPopular(limit: number = 20) {
+    // Fetch all active tags with product counts, sort by count desc
+    const tags = await this.prisma.tag.findMany({
+      where: { deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        translations: true,
+        _count: { select: { products: true } },
+      },
+      orderBy: { products: { _count: 'desc' } },
+      take: Math.min(limit, 100),
+    });
+
+    return tags;
+  }
+
+  // ══════════════════════════════════════════════════════════════
   // UPDATE TAG
   // ══════════════════════════════════════════════════════════════
-  async update(
-    id: string,
-    dto: UpdateTagDto,
-    updatedBy: string,
-  ): Promise<object> {
+  async update(id: string, dto: UpdateTagDto, updatedBy: string) {
     const existing = await this.prisma.tag.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, slug: true },
+      select: { id: true, slug: true, name: true },
     });
 
     if (!existing) {
-      throw new NotFoundException('Tag not found');
+      throw new NotFoundException({
+        message: 'Tag not found',
+        resourceId: id,
+        resource: 'Tag',
+      });
     }
 
-    if (dto.slug && dto.slug !== existing.slug) {
+    // Check slug uniqueness if changing
+    if (dto.slug && dto.slug.toLowerCase() !== existing.slug) {
       const slugExists = await this.prisma.tag.findFirst({
         where: {
-          slug: dto.slug,
+          slug: dto.slug.toLowerCase(),
           deletedAt: null,
           id: { not: id },
         },
@@ -192,7 +244,31 @@ export class TagService {
       });
 
       if (slugExists) {
-        throw new ConflictException('Tag with this slug already exists');
+        throw new ConflictException({
+          message: 'Tag with this slug already exists',
+          field: 'slug',
+          conflictingId: slugExists.id,
+        });
+      }
+    }
+
+    // Check name uniqueness if changing
+    if (dto.name && dto.name.toLowerCase() !== existing.name.toLowerCase()) {
+      const nameExists = await this.prisma.tag.findFirst({
+        where: {
+          name: { equals: dto.name, mode: 'insensitive' },
+          deletedAt: null,
+          id: { not: id },
+        },
+        select: { id: true },
+      });
+
+      if (nameExists) {
+        throw new ConflictException({
+          message: 'Tag with this name already exists',
+          field: 'name',
+          conflictingId: nameExists.id,
+        });
       }
     }
 
@@ -200,30 +276,44 @@ export class TagService {
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.slug !== undefined && { slug: dto.slug }),
+        ...(dto.slug !== undefined && { slug: dto.slug.toLowerCase() }),
         ...(dto.translations !== undefined && {
-          translations: dto.translations as Prisma.InputJsonValue,
+          translations: dto.translations
+            ? (dto.translations as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
         }),
         updatedBy,
       },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        translations: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { products: true } },
+      },
     });
 
-    this.logger.log(`Tag updated: ${tag.slug} by ${updatedBy}`);
-
+    this.logger.log(`Tag updated: "${tag.name}" (${tag.slug}) by ${updatedBy}`);
     return tag;
   }
 
   // ══════════════════════════════════════════════════════════════
-  // DELETE TAG (SOFT DELETE)
+  // DELETE TAG (SOFT)
   // ══════════════════════════════════════════════════════════════
   async remove(id: string, deletedBy: string): Promise<void> {
     const tag = await this.prisma.tag.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, slug: true },
+      select: { id: true, slug: true, name: true },
     });
 
     if (!tag) {
-      throw new NotFoundException('Tag not found');
+      throw new NotFoundException({
+        message: 'Tag not found',
+        resourceId: id,
+        resource: 'Tag',
+      });
     }
 
     const productCount = await this.prisma.productTag.count({
@@ -231,13 +321,39 @@ export class TagService {
     });
 
     if (productCount > 0) {
-      throw new BadRequestException(
-        `Cannot delete tag. ${productCount} products are using this tag`,
-      );
+      throw new BadRequestException({
+        message: `Cannot delete tag "${tag.name}". It is assigned to ${productCount} product(s). Remove it from products first.`,
+        productCount,
+        tagName: tag.name,
+      });
     }
 
     await this.prisma.softDelete('tag', id, deletedBy);
+    this.logger.log(`Tag deleted: "${tag.name}" (${tag.slug}) by ${deletedBy}`);
+  }
 
-    this.logger.log(`Tag deleted: ${tag.slug} by ${deletedBy}`);
+  // ══════════════════════════════════════════════════════════════
+  // BULK DELETE TAGS
+  // ══════════════════════════════════════════════════════════════
+  async bulkDelete(dto: BulkDeleteTagsDto, deletedBy: string) {
+    const results: { id: string; success: boolean; error?: string }[] = [];
+
+    for (const id of dto.ids) {
+      try {
+        await this.remove(id, deletedBy);
+        results.push({ id, success: true });
+      } catch (err: any) {
+        results.push({
+          id,
+          success: false,
+          error: err?.response?.message || err.message,
+        });
+      }
+    }
+
+    const deleted = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+
+    return { deleted, failed, results };
   }
 }

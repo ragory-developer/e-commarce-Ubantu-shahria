@@ -1,3 +1,5 @@
+// ─── src/brand/brand.controller.ts ───────────────────────────
+
 import {
   Controller,
   Get,
@@ -15,9 +17,15 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiResponse,
 } from '@nestjs/swagger';
 import { BrandService } from './brand.service';
-import { CreateBrandDto, UpdateBrandDto, ListBrandsDto } from './dto';
+import {
+  CreateBrandDto,
+  UpdateBrandDto,
+  ListBrandsDto,
+  BulkDeleteBrandsDto,
+} from './dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Permissions } from '../common/decorators/permissions.decorator';
 import { UserType } from '../common/decorators/user-type.decorator';
@@ -30,110 +38,134 @@ import { AdminPermission } from '@prisma/client';
 export class BrandController {
   constructor(private readonly brandService: BrandService) {}
 
-  // ══════════════════════════════════════════════════════════════
-  // CREATE BRAND
-  // ══════════════════════════════════════════════════════════════
+  // CREATE
   @Post()
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
+  @Permissions(AdminPermission.PRODUCT_CREATE)
   @ApiOperation({
     summary: 'Create a new brand',
-    description: 'Requires MANAGE_PRODUCTS permission',
+    description: 'Slug and name must be globally unique.',
   })
-  async create(
-    @Body() dto: CreateBrandDto,
-    @CurrentUser() user: RequestUser,
-  ) {
+  @ApiResponse({ status: 201, description: 'Brand created' })
+  @ApiResponse({ status: 409, description: 'Slug or name conflict' })
+  async create(@Body() dto: CreateBrandDto, @CurrentUser() user: RequestUser) {
     const data = await this.brandService.create(dto, user.id);
-    return { message: 'Brand created successfully', data };
+    return { success: true, message: 'Brand created successfully', data };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // GET ALL BRANDS (PUBLIC)
-  // ══════════════════════════════════════════════════════════════
+  // LIST (PUBLIC)
   @Get()
   @Public()
-  @ApiOperation({
-    summary: 'Get all brands with pagination',
-    description: 'Public endpoint - no authentication required',
-  })
+  @ApiOperation({ summary: 'List all brands with pagination & search' })
+  @ApiResponse({ status: 200, description: 'Brands retrieved' })
   async findAll(@Query() dto: ListBrandsDto) {
     const result = await this.brandService.findAll(dto);
     return {
+      success: true,
       message: 'Brands retrieved successfully',
-      data: result.data,
-      meta: result.meta,
-      total: result.total,
+      ...result,
     };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // GET BRAND BY SLUG (PUBLIC)
-  // ══════════════════════════════════════════════════════════════
+  // GET BY SLUG (PUBLIC)
   @Get('slug/:slug')
   @Public()
-  @ApiParam({ name: 'slug', description: 'Brand slug' })
-  @ApiOperation({
-    summary: 'Get brand by slug',
-    description: 'Public endpoint - no authentication required',
-  })
+  @ApiParam({ name: 'slug', example: 'samsung' })
+  @ApiOperation({ summary: 'Get brand by slug (public)' })
+  @ApiResponse({ status: 200, description: 'Brand found' })
+  @ApiResponse({ status: 404, description: 'Brand not found' })
   async findBySlug(@Param('slug') slug: string) {
     const data = await this.brandService.findBySlug(slug);
-    return { message: 'Brand retrieved successfully', data };
+    return { success: true, message: 'Brand retrieved successfully', data };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // GET BRAND BY ID (PUBLIC)
-  // ══════════════════════════════════════════════════════════════
+  // GET STATS (ADMIN)
+  @Get(':id/stats')
+  @ApiBearerAuth('access-token')
+  @UserType('ADMIN')
+  @ApiParam({ name: 'id', description: 'Brand ID' })
+  @ApiOperation({
+    summary: 'Get brand statistics (admin)',
+    description: 'Total, active, inactive product counts.',
+  })
+  @ApiResponse({ status: 200, description: 'Brand stats retrieved' })
+  @ApiResponse({ status: 404, description: 'Brand not found' })
+  async getStats(@Param('id') id: string) {
+    const data = await this.brandService.getStats(id);
+    return { success: true, message: 'Brand stats retrieved', data };
+  }
+
+  // GET BY ID (PUBLIC)
   @Get(':id')
   @Public()
   @ApiParam({ name: 'id', description: 'Brand ID' })
-  @ApiOperation({
-    summary: 'Get brand by ID',
-    description: 'Public endpoint - no authentication required',
-  })
+  @ApiOperation({ summary: 'Get brand by ID (public)' })
+  @ApiResponse({ status: 200, description: 'Brand found' })
+  @ApiResponse({ status: 404, description: 'Brand not found' })
   async findOne(@Param('id') id: string) {
     const data = await this.brandService.findOne(id);
-    return { message: 'Brand retrieved successfully', data };
+    return { success: true, message: 'Brand retrieved successfully', data };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // UPDATE BRAND
-  // ══════════════════════════════════════════════════════════════
+  // UPDATE
   @Patch(':id')
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
+  @Permissions(AdminPermission.PRODUCT_UPDATE)
   @ApiParam({ name: 'id', description: 'Brand ID' })
-  @ApiOperation({
-    summary: 'Update brand',
-    description: 'Requires MANAGE_PRODUCTS permission',
-  })
+  @ApiOperation({ summary: 'Update brand details' })
+  @ApiResponse({ status: 200, description: 'Brand updated' })
+  @ApiResponse({ status: 404, description: 'Brand not found' })
+  @ApiResponse({ status: 409, description: 'Slug or name conflict' })
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateBrandDto,
     @CurrentUser() user: RequestUser,
   ) {
     const data = await this.brandService.update(id, dto, user.id);
-    return { message: 'Brand updated successfully', data };
+    return { success: true, message: 'Brand updated successfully', data };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // DELETE BRAND
-  // ══════════════════════════════════════════════════════════════
+  // DELETE
   @Delete(':id')
   @ApiBearerAuth('access-token')
   @UserType('ADMIN')
-  @Permissions(AdminPermission.MANAGE_PRODUCTS)
+  @Permissions(AdminPermission.PRODUCT_DELETE)
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: 'id', description: 'Brand ID' })
   @ApiOperation({
-    summary: 'Delete brand (soft delete)',
-    description: 'Requires MANAGE_PRODUCTS permission. Cannot delete if brand has active products.',
+    summary: 'Soft delete brand',
+    description: 'Blocked if brand has active products.',
   })
+  @ApiResponse({ status: 200, description: 'Brand deleted' })
+  @ApiResponse({ status: 400, description: 'Has active products' })
+  @ApiResponse({ status: 404, description: 'Brand not found' })
   async remove(@Param('id') id: string, @CurrentUser() user: RequestUser) {
     await this.brandService.remove(id, user.id);
-    return { message: 'Brand deleted successfully', data: null };
+    return { success: true, message: 'Brand deleted successfully', data: null };
+  }
+
+  // BULK DELETE
+  @Post('bulk-delete')
+  @ApiBearerAuth('access-token')
+  @UserType('ADMIN')
+  @Permissions(AdminPermission.PRODUCT_DELETE)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Bulk soft delete brands',
+    description: 'Returns per-brand results.',
+  })
+  @ApiResponse({ status: 200, description: 'Bulk delete completed' })
+  async bulkDelete(
+    @Body() dto: BulkDeleteBrandsDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    const data = await this.brandService.bulkDelete(dto, user.id);
+    return {
+      success: true,
+      message: `Bulk delete: ${data.deleted} deleted, ${data.failed} failed`,
+      data,
+    };
   }
 }

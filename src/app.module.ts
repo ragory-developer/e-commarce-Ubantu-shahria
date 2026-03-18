@@ -47,6 +47,15 @@ import { ProductController } from './product/product.controller';
 import { ProductModule } from './product/product.module';
 import { TaxController } from './tax/tax.controller';
 import { TaxModule } from './tax/tax.module';
+import { DeliveryZoneService } from './delivery-zone/delivery-zone.service';
+import { DeliveryZoneController } from './delivery-zone/delivery-zone.controller';
+import { DeliveryZoneModule } from './delivery-zone/delivery-zone.module';
+import { ShippingService } from './shipping/shipping.service';
+import { ShippingController } from './shipping/shipping.controller';
+import { ShippingModule } from './shipping/shipping.module';
+import { PromotionService } from './promotion/promotion.service';
+import { PromotionController } from './promotion/promotion.controller';
+import { PromotionModule } from './promotion/promotion.module';
 
 @Module({
   imports: [
@@ -86,9 +95,12 @@ import { TaxModule } from './tax/tax.module';
     VariationModule,
     ProductModule,
     TaxModule,
+    DeliveryZoneModule,
+    ShippingModule,
+    PromotionModule,
   ],
 
-  controllers: [AppController, MediaController, BrandController, AttributeSetController, AttributeController, FlashSaleController, CouponController, ProductController, TaxController],
+  controllers: [AppController, MediaController, BrandController, AttributeSetController, AttributeController, FlashSaleController, CouponController, ProductController, TaxController, DeliveryZoneController, ShippingController, PromotionController],
 
   providers: [
     AppService,
@@ -111,6 +123,9 @@ import { TaxModule } from './tax/tax.module';
     AttributeSetService,
     AttributeService,
     CouponService,
+    DeliveryZoneService,
+    ShippingService,
+    PromotionService,
   ],
 })
 export class AppModule {}

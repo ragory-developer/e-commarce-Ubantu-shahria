@@ -1,3 +1,5 @@
+// ─── src/attribute/attribute.service.ts ──────────────────────
+
 import {
   Injectable,
   NotFoundException,
@@ -7,13 +9,13 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, AttributeType } from '@prisma/client';
-
 import {
   CreateAttributeDto,
   UpdateAttributeDto,
   ListAttributesDto,
   AddAttributeValuesDto,
   UpdateAttributeValuesDto,
+  ReorderAttributeValuesDto,
 } from './dto';
 
 @Injectable()
@@ -22,16 +24,24 @@ export class AttributeService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(dto: CreateAttributeDto, createdBy: string): Promise<object> {
+  // ══════════════════════════════════════════════════════════════
+  // CREATE ATTRIBUTE
+  // ══════════════════════════════════════════════════════════════
+  async create(dto: CreateAttributeDto, createdBy: string) {
+    // Verify attribute set exists
     const attributeSet = await this.prisma.attributeSet.findFirst({
       where: { id: dto.attributeSetId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, name: true },
     });
 
     if (!attributeSet) {
-      throw new NotFoundException('Attribute set not found');
+      throw new NotFoundException({
+        message: 'Attribute set not found',
+        resourceId: dto.attributeSetId,
+      });
     }
 
+    // Slug must be unique within the same attribute set
     const existingSlug = await this.prisma.attribute.findFirst({
       where: {
         attributeSetId: dto.attributeSetId,
@@ -42,9 +52,12 @@ export class AttributeService {
     });
 
     if (existingSlug) {
-      throw new ConflictException(
-        'Attribute with this slug already exists in this set',
-      );
+      throw new ConflictException({
+        message: `Attribute with slug "${dto.slug}" already exists in attribute set "${attributeSet.name}"`,
+        field: 'slug',
+        conflictingId: existingSlug.id,
+        attributeSetId: dto.attributeSetId,
+      });
     }
 
     const attribute = await this.prisma.attribute.create({
@@ -52,11 +65,12 @@ export class AttributeService {
         attributeSetId: dto.attributeSetId,
         name: dto.name,
         slug: dto.slug,
-        type: dto.type || AttributeType.TEXT,
-        position: dto.position || 0,
+        type: dto.type ?? AttributeType.TEXT,
+        position: dto.position ?? 0,
         translations: dto.translations
           ? (dto.translations as Prisma.InputJsonValue)
           : Prisma.JsonNull,
+        createdBy,
       },
       select: {
         id: true,
@@ -68,32 +82,39 @@ export class AttributeService {
         translations: true,
         createdAt: true,
         updatedAt: true,
-        _count: {
-          select: {
-            values: true,
-            productAttributes: true,
-          },
-        },
+        _count: { select: { values: true, productAttributes: true } },
       },
     });
 
-    this.logger.log(`Attribute created: ${attribute.slug} by ${createdBy}`);
+    this.logger.log(
+      `Attribute created: "${attribute.name}" in set ${dto.attributeSetId} by ${createdBy}`,
+    );
     return attribute;
   }
 
-  async findAll(
-    dto: ListAttributesDto,
-  ): Promise<{ data: object[]; total: number; meta: object }> {
-    const where = {
+  // ══════════════════════════════════════════════════════════════
+  // LIST ATTRIBUTES
+  // ══════════════════════════════════════════════════════════════
+  async findAll(dto: ListAttributesDto) {
+    const where: Prisma.AttributeWhereInput = {
       deletedAt: null,
       ...(dto.attributeSetId && { attributeSetId: dto.attributeSetId }),
+      ...(dto.type && { type: dto.type }),
       ...(dto.search && {
         OR: [
-          { name: { contains: dto.search, mode: 'insensitive' as const } },
-          { slug: { contains: dto.search, mode: 'insensitive' as const } },
+          { name: { contains: dto.search, mode: 'insensitive' } },
+          { slug: { contains: dto.search, mode: 'insensitive' } },
         ],
       }),
     };
+
+    const sortMap: Record<string, Prisma.AttributeOrderByWithRelationInput> = {
+      name: { name: dto.sortOrder ?? 'asc' },
+      slug: { slug: dto.sortOrder ?? 'asc' },
+      position: { position: dto.sortOrder ?? 'asc' },
+      createdAt: { createdAt: dto.sortOrder ?? 'desc' },
+    };
+    const orderBy = sortMap[dto.sortBy ?? 'position'] ?? { position: 'asc' };
 
     const [data, total] = await Promise.all([
       this.prisma.attribute.findMany({
@@ -108,14 +129,10 @@ export class AttributeService {
           translations: true,
           createdAt: true,
           updatedAt: true,
-          _count: {
-            select: {
-              values: true,
-              productAttributes: true,
-            },
-          },
+          attributeSet: { select: { id: true, name: true, slug: true } },
+          _count: { select: { values: true, productAttributes: true } },
         },
-        orderBy: [{ position: 'asc' }, { createdAt: 'desc' }],
+        orderBy,
         skip: dto.skip,
         take: dto.take,
       }),
@@ -129,26 +146,30 @@ export class AttributeService {
         skip: dto.skip,
         take: dto.take,
         page: Math.floor(dto.skip / dto.take) + 1,
-        pageCount: Math.ceil(total / dto.take),
+        pageCount: Math.ceil(total / dto.take) || 1,
+        hasMore: dto.skip + dto.take < total,
       },
     };
   }
 
-  async findByAttributeSet(attributeSetId: string): Promise<object[]> {
+  // ══════════════════════════════════════════════════════════════
+  // GET ALL ATTRIBUTES IN A SET (public)
+  // ══════════════════════════════════════════════════════════════
+  async findByAttributeSet(attributeSetId: string) {
     const attributeSet = await this.prisma.attributeSet.findFirst({
       where: { id: attributeSetId, deletedAt: null },
       select: { id: true },
     });
 
     if (!attributeSet) {
-      throw new NotFoundException('Attribute set not found');
+      throw new NotFoundException({
+        message: 'Attribute set not found',
+        resourceId: attributeSetId,
+      });
     }
 
     return this.prisma.attribute.findMany({
-      where: {
-        attributeSetId,
-        deletedAt: null,
-      },
+      where: { attributeSetId, deletedAt: null },
       select: {
         id: true,
         name: true,
@@ -161,6 +182,8 @@ export class AttributeService {
           select: {
             id: true,
             value: true,
+            label: true,
+            hexColor: true,
             position: true,
             translations: true,
           },
@@ -171,26 +194,26 @@ export class AttributeService {
     });
   }
 
-  async findOne(id: string): Promise<object> {
+  // ══════════════════════════════════════════════════════════════
+  // GET BY ID
+  // ══════════════════════════════════════════════════════════════
+  async findOne(id: string) {
     const attribute = await this.prisma.attribute.findFirst({
       where: { id, deletedAt: null },
       include: {
-        attributeSet: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
+        attributeSet: { select: { id: true, name: true, slug: true } },
         values: {
           where: { deletedAt: null },
           select: {
             id: true,
             value: true,
+            label: true,
+            hexColor: true,
             position: true,
             translations: true,
             createdAt: true,
             updatedAt: true,
+            _count: { select: { productAttributeValues: true } },
           },
           orderBy: { position: 'asc' },
         },
@@ -198,24 +221,29 @@ export class AttributeService {
     });
 
     if (!attribute) {
-      throw new NotFoundException('Attribute not found');
+      throw new NotFoundException({
+        message: 'Attribute not found',
+        resourceId: id,
+      });
     }
 
     return attribute;
   }
 
-  async update(
-    id: string,
-    dto: UpdateAttributeDto,
-    updatedBy: string,
-  ): Promise<object> {
+  // ══════════════════════════════════════════════════════════════
+  // UPDATE ATTRIBUTE
+  // ══════════════════════════════════════════════════════════════
+  async update(id: string, dto: UpdateAttributeDto, updatedBy: string) {
     const existing = await this.prisma.attribute.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, slug: true, attributeSetId: true },
+      select: { id: true, slug: true, name: true, attributeSetId: true },
     });
 
     if (!existing) {
-      throw new NotFoundException('Attribute not found');
+      throw new NotFoundException({
+        message: 'Attribute not found',
+        resourceId: id,
+      });
     }
 
     if (dto.slug && dto.slug !== existing.slug) {
@@ -228,122 +256,154 @@ export class AttributeService {
         },
         select: { id: true },
       });
-
       if (slugExists) {
-        throw new ConflictException(
-          'Attribute with this slug already exists in this set',
-        );
+        throw new ConflictException({
+          message: 'Slug already used in this attribute set',
+          field: 'slug',
+          conflictingId: slugExists.id,
+        });
       }
     }
 
-    const attribute = await this.prisma.attribute.update({
+    await this.prisma.attribute.update({
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.slug !== undefined && { slug: dto.slug }),
-        ...(dto.type !== undefined && { type: dto.type as AttributeType }),
+        ...(dto.type !== undefined && { type: dto.type }),
         ...(dto.position !== undefined && { position: dto.position }),
         ...(dto.translations !== undefined && {
-          translations: dto.translations
-            ? (dto.translations as Prisma.InputJsonValue)
-            : Prisma.JsonNull,
+          translations: dto.translations as Prisma.InputJsonValue,
         }),
         updatedBy,
       },
-      include: {
-        values: {
-          where: { deletedAt: null },
-          select: {
-            id: true,
-            value: true,
-            position: true,
-          },
-        },
-      },
     });
 
-    this.logger.log(`Attribute updated: ${attribute.slug} by ${updatedBy}`);
-    return attribute;
+    this.logger.log(`Attribute updated: "${existing.name}" by ${updatedBy}`);
+    return this.findOne(id);
   }
 
-  async addValues(
-    id: string,
-    dto: AddAttributeValuesDto,
-    createdBy: string,
-  ): Promise<object[]> {
+  // ══════════════════════════════════════════════════════════════
+  // ADD ATTRIBUTE VALUES (batch)
+  // ══════════════════════════════════════════════════════════════
+  async addValues(id: string, dto: AddAttributeValuesDto, createdBy: string) {
     const attribute = await this.prisma.attribute.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true },
+      select: { id: true, name: true },
     });
 
     if (!attribute) {
-      throw new NotFoundException('Attribute not found');
+      throw new NotFoundException({
+        message: 'Attribute not found',
+        resourceId: id,
+      });
     }
 
-    const maxPosition = await this.prisma.attributeValue.findFirst({
+    // Get existing values to check for duplicates
+    const existingValues = await this.prisma.attributeValue.findMany({
       where: { attributeId: id, deletedAt: null },
-      select: { position: true },
+      select: { value: true, position: true },
       orderBy: { position: 'desc' },
     });
 
-    let position = (maxPosition?.position ?? -1) + 1;
+    const existingSet = new Set(
+      existingValues.map((v) => v.value.toLowerCase()),
+    );
+    const maxPos = existingValues[0]?.position ?? -1;
 
-    const values = await Promise.all(
-      dto.values.map((value) =>
+    const duplicates: string[] = [];
+    const toCreate: typeof dto.values = [];
+
+    for (const v of dto.values) {
+      if (existingSet.has(v.value.toLowerCase())) {
+        duplicates.push(v.value);
+      } else {
+        toCreate.push(v);
+        existingSet.add(v.value.toLowerCase());
+      }
+    }
+
+    let position = maxPos + 1;
+    const created = await Promise.all(
+      toCreate.map((v) =>
         this.prisma.attributeValue.create({
           data: {
             attributeId: id,
-            value: value.value,
+            value: v.value,
+            label: v.label ?? null,
+            hexColor: v.hexColor ?? null,
             position: position++,
-            translations: value.translations
-              ? (value.translations as Prisma.InputJsonValue)
+            translations: v.translations
+              ? (v.translations as Prisma.InputJsonValue)
               : Prisma.JsonNull,
             createdBy,
           },
           select: {
             id: true,
             value: true,
+            label: true,
+            hexColor: true,
             position: true,
             translations: true,
-            createdAt: true,
           },
         }),
       ),
     );
 
-    this.logger.log(`Added ${values.length} values to attribute ${id}`);
-    return values;
+    this.logger.log(
+      `Added ${created.length} values to attribute "${attribute.name}" (${duplicates.length} duplicates skipped)`,
+    );
+
+    return {
+      added: created,
+      skipped: duplicates,
+      summary: {
+        added: created.length,
+        skippedDuplicates: duplicates.length,
+        skippedValues: duplicates,
+      },
+    };
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // UPDATE ATTRIBUTE VALUES (batch)
+  // ══════════════════════════════════════════════════════════════
   async updateValues(
     id: string,
     dto: UpdateAttributeValuesDto,
     updatedBy: string,
-  ): Promise<object[]> {
+  ) {
     const attribute = await this.prisma.attribute.findFirst({
       where: { id, deletedAt: null },
       select: { id: true },
     });
 
     if (!attribute) {
-      throw new NotFoundException('Attribute not found');
+      throw new NotFoundException({
+        message: 'Attribute not found',
+        resourceId: id,
+      });
     }
 
     const updated = await Promise.all(
-      dto.values.map((value) =>
+      dto.values.map((v) =>
         this.prisma.attributeValue.update({
-          where: { id: value.id },
+          where: { id: v.id },
           data: {
-            value: value.value,
-            position: value.position,
-            ...(value.translations && {
-              translations: value.translations as Prisma.InputJsonValue,
+            ...(v.value !== undefined && { value: v.value }),
+            ...(v.label !== undefined && { label: v.label }),
+            ...(v.hexColor !== undefined && { hexColor: v.hexColor }),
+            ...(v.position !== undefined && { position: v.position }),
+            ...(v.translations !== undefined && {
+              translations: v.translations as Prisma.InputJsonValue,
             }),
             updatedBy,
           },
           select: {
             id: true,
             value: true,
+            label: true,
+            hexColor: true,
             position: true,
             translations: true,
             updatedAt: true,
@@ -352,76 +412,123 @@ export class AttributeService {
       ),
     );
 
-    this.logger.log(`Updated ${updated.length} values for attribute ${id}`);
     return updated;
   }
 
-  async deleteValue(
-    id: string,
-    valueId: string,
-    deletedBy: string,
-  ): Promise<void> {
+  // ══════════════════════════════════════════════════════════════
+  // REORDER ATTRIBUTE VALUES
+  // ══════════════════════════════════════════════════════════════
+  async reorderValues(id: string, dto: ReorderAttributeValuesDto) {
     const attribute = await this.prisma.attribute.findFirst({
       where: { id, deletedAt: null },
       select: { id: true },
     });
 
     if (!attribute) {
-      throw new NotFoundException('Attribute not found');
+      throw new NotFoundException({
+        message: 'Attribute not found',
+        resourceId: id,
+      });
+    }
+
+    const operations = dto.items.map((item) =>
+      this.prisma.attributeValue.update({
+        where: { id: item.id },
+        data: { position: item.position },
+      }),
+    );
+
+    await this.prisma.$transaction(operations);
+    return this.findOne(id);
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // DELETE ATTRIBUTE VALUE
+  // ══════════════════════════════════════════════════════════════
+  async deleteValue(
+    attributeId: string,
+    valueId: string,
+    deletedBy: string,
+  ): Promise<void> {
+    const attribute = await this.prisma.attribute.findFirst({
+      where: { id: attributeId, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!attribute) {
+      throw new NotFoundException({
+        message: 'Attribute not found',
+        resourceId: attributeId,
+      });
     }
 
     const value = await this.prisma.attributeValue.findFirst({
-      where: { id: valueId, attributeId: id, deletedAt: null },
+      where: { id: valueId, attributeId, deletedAt: null },
       select: { id: true, value: true },
     });
 
     if (!value) {
-      throw new NotFoundException('Attribute value not found');
+      throw new NotFoundException({
+        message: 'Attribute value not found',
+        resourceId: valueId,
+      });
     }
 
-    const usage = await this.prisma.productAttributeValue.count({
+    const usageCount = await this.prisma.productAttributeValue.count({
       where: { attributeValueId: valueId },
     });
 
-    if (usage > 0) {
-      throw new BadRequestException(
-        `Cannot delete value "${value.value}". It is used by ${usage} products.`,
-      );
+    if (usageCount > 0) {
+      throw new BadRequestException({
+        message: `Cannot delete value "${value.value}". It is assigned to ${usageCount} product(s).`,
+        usageCount,
+        value: value.value,
+      });
     }
 
     await this.prisma.softDelete('attributeValue', valueId, deletedBy);
-    this.logger.log(`Attribute value deleted: ${value.value}`);
+    this.logger.log(
+      `Attribute value deleted: "${value.value}" (${valueId}) by ${deletedBy}`,
+    );
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // DELETE ATTRIBUTE
+  // ══════════════════════════════════════════════════════════════
   async remove(id: string, deletedBy: string): Promise<void> {
     const attribute = await this.prisma.attribute.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, slug: true },
+      select: { id: true, name: true, slug: true },
     });
 
     if (!attribute) {
-      throw new NotFoundException('Attribute not found');
+      throw new NotFoundException({
+        message: 'Attribute not found',
+        resourceId: id,
+      });
     }
 
-    const usage = await this.prisma.productAttribute.count({
+    // Check if attribute is used by any products
+    const usageCount = await this.prisma.productAttribute.count({
       where: { attributeId: id },
     });
 
-    if (usage > 0) {
-      throw new BadRequestException(
-        `Cannot delete attribute. It is used by ${usage} products.`,
-      );
+    if (usageCount > 0) {
+      throw new BadRequestException({
+        message: `Cannot delete attribute "${attribute.name}". It is used by ${usageCount} product(s). Remove it from products first.`,
+        usageCount,
+      });
     }
 
+    // Soft delete all values first
     await this.prisma.attributeValue.updateMany({
       where: { attributeId: id, deletedAt: null },
-      data: {
-        deletedAt: new Date(),
-        deletedBy,
-      },
+      data: { deletedAt: new Date(), deletedBy },
     });
 
     await this.prisma.softDelete('attribute', id, deletedBy);
-    this.logger.log(`Attribute deleted: ${attribute.slug}`);
+    this.logger.log(
+      `Attribute deleted: "${attribute.name}" (${attribute.slug}) by ${deletedBy}`,
+    );
   }
 }

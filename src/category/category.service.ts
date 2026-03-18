@@ -1,3 +1,5 @@
+// ─── src/category/category.service.ts ────────────────────────
+
 import {
   Injectable,
   NotFoundException,
@@ -12,7 +14,34 @@ import {
   UpdateCategoryDto,
   ListCategoriesDto,
   MoveCategoryDto,
+  ReorderCategoriesDto,
 } from './dto';
+
+const MAX_DEPTH = 5;
+
+// Select shape for category list items
+const CATEGORY_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  description: true,
+  image: true,
+  icon: true,
+  bannerImage: true,
+  parentId: true,
+  path: true,
+  pathIds: true,
+  depth: true,
+  position: true,
+  isActive: true,
+  translations: true,
+  seo: true,
+  metaTitle: true,
+  metaDescription: true,
+  createdAt: true,
+  updatedAt: true,
+  _count: { select: { children: true, products: true } },
+} as const;
 
 @Injectable()
 export class CategoryService {
@@ -21,15 +50,14 @@ export class CategoryService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ══════════════════════════════════════════════════════════════
-  // HELPER: Build materialized path
+  // HELPER: Build materialized path from parent
   // ══════════════════════════════════════════════════════════════
-  private async buildPath(parentId: string | null): Promise<{
-    path: string;
-    pathIds: string;
-    depth: number;
-  }> {
+  private async buildPath(
+    parentId: string | null,
+    newSlug: string,
+  ): Promise<{ path: string; pathIds: string; depth: number }> {
     if (!parentId) {
-      return { path: '', pathIds: '', depth: 0 };
+      return { path: newSlug, pathIds: '', depth: 0 };
     }
 
     const parent = await this.prisma.category.findFirst({
@@ -37,302 +65,291 @@ export class CategoryService {
       select: { id: true, slug: true, path: true, pathIds: true, depth: true },
     });
 
-    if (!parent) {
-      throw new NotFoundException('Parent category not found');
+    if (!parent)
+      throw new NotFoundException({
+        message: 'Parent category not found',
+        parentId,
+      });
+
+    const depth = parent.depth + 1;
+    if (depth > MAX_DEPTH) {
+      throw new BadRequestException({
+        message: `Maximum category depth of ${MAX_DEPTH} exceeded`,
+        currentDepth: depth,
+        maxDepth: MAX_DEPTH,
+      });
     }
 
-    const path = parent.path ? `${parent.path}/${parent.slug}` : parent.slug;
+    const path = `${parent.path}/${newSlug}`;
     const pathIds = parent.pathIds
       ? `${parent.pathIds},${parent.id}`
       : parent.id;
-    const depth = parent.depth + 1;
 
     return { path, pathIds, depth };
   }
 
   // ══════════════════════════════════════════════════════════════
-  // HELPER: Update descendant paths
+  // HELPER: Rebuild paths for all descendants after move/slug change
   // ══════════════════════════════════════════════════════════════
-  private async updateDescendantPaths(
-    categoryId: string,
-    newPath: string,
-    newPathIds: string,
-    newDepth: number,
-  ): Promise<void> {
-    // Get the category being moved
+  private async rebuildDescendantPaths(categoryId: string): Promise<void> {
     const category = await this.prisma.category.findUnique({
       where: { id: categoryId },
-      select: { slug: true, pathIds: true },
+      select: { id: true, slug: true, path: true, pathIds: true, depth: true },
     });
-
     if (!category) return;
 
-    // Find all descendants using raw SQL for string pattern matching
-    const descendants = await this.prisma.$queryRaw<
-      Array<{
-        id: string;
-        pathIds: string | null;
-        slug: string;
-      }>
-    >`
-      SELECT id, path_ids as "pathIds", slug
-      FROM categories
+    // Find all direct children
+    const children = await this.prisma.category.findMany({
+      where: { parentId: categoryId, deletedAt: null },
+      select: { id: true, slug: true },
+    });
+
+    for (const child of children) {
+      const newPath = `${category.path}/${child.slug}`;
+      const newPathIds = category.pathIds
+        ? `${category.pathIds},${category.id}`
+        : category.id;
+      const newDepth = category.depth + 1;
+
+      await this.prisma.category.update({
+        where: { id: child.id },
+        data: { path: newPath, pathIds: newPathIds, depth: newDepth },
+      });
+
+      // Recurse into child
+      await this.rebuildDescendantPaths(child.id);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // HELPER: Get all descendant IDs using raw SQL
+  // ══════════════════════════════════════════════════════════════
+  private async getDescendantIds(categoryId: string): Promise<string[]> {
+    const result = await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM categories
       WHERE deleted_at IS NULL
-        AND id != ${categoryId}
         AND (
-          path_ids LIKE ${categoryId + ',%'}
+          path_ids = ${categoryId}
+          OR path_ids LIKE ${categoryId + ',%'}
           OR path_ids LIKE ${'%,' + categoryId + ',%'}
           OR path_ids LIKE ${'%,' + categoryId}
-          OR path_ids = ${categoryId}
         )
     `;
+    return result.map((r) => r.id);
+  }
 
-    // Update each descendant
-    for (const descendant of descendants) {
-      if (!descendant.pathIds) continue;
+  // ══════════════════════════════════════════════════════════════
+  // HELPER: Link/unlink media
+  // ══════════════════════════════════════════════════════════════
+  private async linkMedia(
+    tx: any,
+    entityId: string,
+    mediaId: string,
+    purpose: string,
+    isMain = false,
+  ) {
+    await tx.entityMedia.upsert({
+      where: {
+        entityType_entityId_mediaId: {
+          entityType: 'Category',
+          entityId,
+          mediaId,
+        },
+      },
+      create: { entityType: 'Category', entityId, mediaId, purpose, isMain },
+      update: { purpose, isMain },
+    });
+    await tx.media.update({
+      where: { id: mediaId },
+      data: { referenceCount: { increment: 1 } },
+    });
+  }
 
-      const oldPathIdsArray = descendant.pathIds.split(',');
-      const newPathIdsArray = newPathIds ? newPathIds.split(',') : [];
+  private async unlinkMedia(
+    tx: any,
+    entityId: string,
+    mediaId: string,
+    purpose: string,
+  ) {
+    const deleted = await tx.entityMedia.deleteMany({
+      where: { entityType: 'Category', entityId, mediaId, purpose },
+    });
+    if (deleted.count > 0) {
+      await tx.media.updateMany({
+        where: { id: mediaId, referenceCount: { gt: 0 } },
+        data: { referenceCount: { decrement: 1 } },
+      });
+    }
+  }
 
-      // Find where the moved category appears in old path
-      const movedIndex = oldPathIdsArray.indexOf(categoryId);
+  // ══════════════════════════════════════════════════════════════
+  // HELPER: Verify media IDs
+  // ══════════════════════════════════════════════════════════════
+  private async verifyMedia(mediaId: string, field: string) {
+    const media = await this.prisma.media.findFirst({
+      where: { id: mediaId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!media)
+      throw new BadRequestException({
+        message: `Media not found for "${field}"`,
+        field,
+        mediaId,
+      });
+  }
 
-      if (movedIndex !== -1) {
-        // Replace the path up to and including the moved category
-        const remainingPath = oldPathIdsArray.slice(movedIndex + 1);
-        const updatedPathIds = [
-          ...newPathIdsArray,
-          categoryId,
-          ...remainingPath,
-        ].join(',');
+  // ══════════════════════════════════════════════════════════════
+  // HELPER: Load breadcrumbs from pathIds string
+  // ══════════════════════════════════════════════════════════════
+  private async loadBreadcrumbs(pathIds: string | null): Promise<any[]> {
+    if (!pathIds) return [];
+    const ids = pathIds.split(',').filter(Boolean);
+    if (ids.length === 0) return [];
 
-        // Build slug path
-        const pathSegments: string[] = [];
-        for (const id of updatedPathIds.split(',')) {
-          const cat = await this.prisma.category.findUnique({
-            where: { id },
-            select: { slug: true },
-          });
-          if (cat) pathSegments.push(cat.slug);
-        }
+    const cats = await this.prisma.category.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      select: { id: true, name: true, slug: true, image: true },
+    });
 
-        const updatedPath = pathSegments.join('/');
-        const updatedDepth = updatedPathIds.split(',').length;
+    return ids.map((id) => cats.find((c) => c.id === id)).filter(Boolean);
+  }
 
-        await this.prisma.category.update({
-          where: { id: descendant.id },
-          data: {
-            path: updatedPath,
-            pathIds: updatedPathIds,
-            depth: updatedDepth,
-          },
-        });
-      }
+  // ══════════════════════════════════════════════════════════════
+  // HELPER: Recursively load children for tree
+  // ══════════════════════════════════════════════════════════════
+  private async loadChildren(
+    category: any,
+    activeOnly: boolean,
+  ): Promise<void> {
+    const children = await this.prisma.category.findMany({
+      where: {
+        parentId: category.id,
+        deletedAt: null,
+        ...(activeOnly && { isActive: true }),
+      },
+      select: CATEGORY_SELECT,
+      orderBy: [{ position: 'asc' }, { name: 'asc' }],
+    });
+
+    category.children = children;
+    for (const child of children) {
+      await this.loadChildren(child, activeOnly);
     }
   }
 
   // ══════════════════════════════════════════════════════════════
   // CREATE CATEGORY
   // ══════════════════════════════════════════════════════════════
-  async create(dto: CreateCategoryDto, createdBy: string): Promise<object> {
-    // Check slug uniqueness
+  async create(dto: CreateCategoryDto, createdBy: string) {
+    // Slug uniqueness
     const existingSlug = await this.prisma.category.findFirst({
       where: { slug: dto.slug, deletedAt: null },
       select: { id: true },
     });
 
     if (existingSlug) {
-      throw new ConflictException('Category with this slug already exists');
-    }
-
-    // Check parent exists if provided
-    if (dto.parentId) {
-      const parent = await this.prisma.category.findFirst({
-        where: { id: dto.parentId, deletedAt: null },
-        select: { id: true },
+      throw new ConflictException({
+        message: 'Category with this slug already exists',
+        field: 'slug',
+        conflictingId: existingSlug.id,
       });
-
-      if (!parent) {
-        throw new NotFoundException('Parent category not found');
-      }
     }
 
-    // Build materialized path
-    const { path, pathIds, depth } = await this.buildPath(dto.parentId || null);
+    // Verify media
+    if (dto.image) await this.verifyMedia(dto.image, 'image');
+    if (dto.icon) await this.verifyMedia(dto.icon, 'icon');
+    if (dto.bannerImage) await this.verifyMedia(dto.bannerImage, 'bannerImage');
 
-    // Verify media exists if provided
-    if (dto.image) {
-      const media = await this.prisma.media.findFirst({
-        where: { id: dto.image, deletedAt: null },
-        select: { id: true },
-      });
-      if (!media) throw new BadRequestException('Invalid image media ID');
-    }
+    // Build path
+    const { path, pathIds, depth } = await this.buildPath(
+      dto.parentId || null,
+      dto.slug,
+    );
 
-    if (dto.icon) {
-      const media = await this.prisma.media.findFirst({
-        where: { id: dto.icon, deletedAt: null },
-        select: { id: true },
-      });
-      if (!media) throw new BadRequestException('Invalid icon media ID');
-    }
-
-    // Create category
-    const category = await this.prisma.category.create({
-      data: {
-        name: dto.name,
-        slug: dto.slug,
-        description: dto.description || null,
-        parentId: dto.parentId || null,
-        image: dto.image || null,
-        icon: dto.icon || null,
-        position: dto.position || 0,
-        depth,
-        path,
-        pathIds,
-        isActive: dto.isActive ?? true,
-        translations: dto.translations
-          ? (dto.translations as Prisma.InputJsonValue)
-          : Prisma.JsonNull,
-        seo: dto.seo ? (dto.seo as Prisma.InputJsonValue) : Prisma.JsonNull,
-        createdBy,
-      },
-      include: {
-        parent: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
+    const category = await this.prisma.$transaction(async (tx) => {
+      const cat = await tx.category.create({
+        data: {
+          name: dto.name,
+          slug: dto.slug,
+          description: dto.description ?? null,
+          parentId: dto.parentId || null,
+          image: dto.image || null,
+          icon: dto.icon || null,
+          bannerImage: dto.bannerImage || null,
+          path,
+          pathIds,
+          depth,
+          position: dto.position ?? 0,
+          isActive: dto.isActive ?? true,
+          translations: dto.translations
+            ? (dto.translations as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+          seo: dto.seo ? (dto.seo as Prisma.InputJsonValue) : Prisma.JsonNull,
+          createdBy,
         },
-        _count: {
-          select: {
-            children: true,
-            products: true,
-          },
-        },
-      },
+      });
+
+      if (dto.image)
+        await this.linkMedia(tx, cat.id, dto.image, 'thumbnail', true);
+      if (dto.icon) await this.linkMedia(tx, cat.id, dto.icon, 'icon');
+      if (dto.bannerImage)
+        await this.linkMedia(tx, cat.id, dto.bannerImage, 'banner');
+
+      return cat;
     });
 
-    // Link media
-    if (dto.image) {
-      await this.prisma.entityMedia.create({
-        data: {
-          entityType: 'Category',
-          entityId: category.id,
-          mediaId: dto.image,
-          purpose: 'thumbnail',
-          isMain: true,
-        },
-      });
-
-      await this.prisma.media.update({
-        where: { id: dto.image },
-        data: { referenceCount: { increment: 1 } },
-      });
-    }
-
-    if (dto.icon) {
-      await this.prisma.entityMedia.create({
-        data: {
-          entityType: 'Category',
-          entityId: category.id,
-          mediaId: dto.icon,
-          purpose: 'icon',
-        },
-      });
-
-      await this.prisma.media.update({
-        where: { id: dto.icon },
-        data: { referenceCount: { increment: 1 } },
-      });
-    }
-
-    this.logger.log(`Category created: ${category.slug} by ${createdBy}`);
-    return category;
+    this.logger.log(
+      `Category created: "${category.name}" (${category.slug}) depth=${depth} by ${createdBy}`,
+    );
+    return this.findOne(category.id);
   }
 
   // ══════════════════════════════════════════════════════════════
-  // GET ALL CATEGORIES
+  // GET ALL CATEGORIES (flat list)
   // ══════════════════════════════════════════════════════════════
-  async findAll(dto: ListCategoriesDto): Promise<{
-    data: object[];
-    total: number;
-    meta: object;
-  }> {
-    const where: any = {
+  async findAll(dto: ListCategoriesDto) {
+    const where: Prisma.CategoryWhereInput = {
       deletedAt: null,
+      ...(dto.search && {
+        OR: [
+          { name: { contains: dto.search, mode: 'insensitive' } },
+          { slug: { contains: dto.search, mode: 'insensitive' } },
+        ],
+      }),
+      ...(dto.parentId
+        ? { parentId: dto.parentId }
+        : dto.rootOnly
+          ? { parentId: null }
+          : {}),
+      ...(dto.isActive !== undefined && { isActive: dto.isActive }),
     };
 
-    // Search filter
-    if (dto.search) {
-      where.OR = [
-        { name: { contains: dto.search, mode: 'insensitive' as const } },
-        { slug: { contains: dto.search, mode: 'insensitive' as const } },
-      ];
-    }
+    const sortField = dto.sortBy ?? 'position';
+    const sortDir = dto.sortOrder ?? 'asc';
 
-    // Parent filter
-    if (dto.parentId) {
-      where.parentId = dto.parentId;
-    } else if (dto.rootOnly) {
-      where.parentId = null;
-    }
+    const orderByMap: Record<string, Prisma.CategoryOrderByWithRelationInput> =
+      {
+        name: { name: sortDir },
+        slug: { slug: sortDir },
+        position: { position: sortDir },
+        createdAt: { createdAt: sortDir },
+        depth: { depth: sortDir },
+      };
+    const orderBy = orderByMap[sortField] ?? { position: 'asc' };
 
     const [data, total] = await Promise.all([
       this.prisma.category.findMany({
         where,
         select: {
-          id: true,
-          name: true,
-          slug: true,
-          description: true,
-          image: true,
-          icon: true,
-          parentId: true,
-          position: true,
-          depth: true,
-          path: true,
-          isActive: true,
-          translations: true,
-          seo: true,
-          createdAt: true,
-          updatedAt: true,
-          parent: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-          _count: {
-            select: {
-              children: true,
-              products: true,
-            },
-          },
+          ...CATEGORY_SELECT,
+          parent: { select: { id: true, name: true, slug: true } },
         },
-        orderBy: [{ position: 'asc' }, { createdAt: 'desc' }],
+        orderBy,
         skip: dto.skip,
         take: dto.take,
       }),
       this.prisma.category.count({ where }),
     ]);
-
-    // If tree structure requested, build hierarchy
-    if (dto.tree && dto.rootOnly) {
-      const tree = await this.buildTree(data as any[]);
-      return {
-        data: tree,
-        total,
-        meta: {
-          skip: dto.skip,
-          take: dto.take,
-          page: Math.floor(dto.skip / dto.take) + 1,
-          pageCount: Math.ceil(total / dto.take),
-        },
-      };
-    }
 
     return {
       data,
@@ -341,162 +358,44 @@ export class CategoryService {
         skip: dto.skip,
         take: dto.take,
         page: Math.floor(dto.skip / dto.take) + 1,
-        pageCount: Math.ceil(total / dto.take),
+        pageCount: Math.ceil(total / dto.take) || 1,
+        hasMore: dto.skip + dto.take < total,
       },
     };
   }
 
   // ══════════════════════════════════════════════════════════════
-  // BUILD TREE STRUCTURE
+  // GET FULL TREE
   // ══════════════════════════════════════════════════════════════
-  private async buildTree(categories: any[]): Promise<any[]> {
-    const categoryMap = new Map();
-    const roots: any[] = [];
+  async getTree(activeOnly: boolean = false) {
+    const roots = await this.prisma.category.findMany({
+      where: {
+        parentId: null,
+        deletedAt: null,
+        ...(activeOnly && { isActive: true }),
+      },
+      select: CATEGORY_SELECT,
+      orderBy: [{ position: 'asc' }, { name: 'asc' }],
+    });
 
-    // First pass: create map
-    for (const cat of categories) {
-      categoryMap.set(cat.id, { ...cat, children: [] });
-    }
-
-    // Second pass: build tree
-    for (const cat of categories) {
-      if (cat.parentId) {
-        const parent = categoryMap.get(cat.parentId);
-        if (parent) {
-          parent.children.push(categoryMap.get(cat.id));
-        }
-      } else {
-        roots.push(categoryMap.get(cat.id));
-      }
-    }
-
-    // Recursively load children for each root
     for (const root of roots) {
-      await this.loadChildren(root);
+      await this.loadChildren(root as any, activeOnly);
     }
 
     return roots;
   }
 
-  // Load children recursively
-  private async loadChildren(category: any): Promise<void> {
-    const children = await this.prisma.category.findMany({
-      where: {
-        parentId: category.id,
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        description: true,
-        image: true,
-        icon: true,
-        parentId: true,
-        position: true,
-        depth: true,
-        path: true,
-        isActive: true,
-        translations: true,
-        createdAt: true,
-        _count: {
-          select: {
-            children: true,
-            products: true,
-          },
-        },
-      },
-      orderBy: [{ position: 'asc' }, { name: 'asc' }],
-    });
-
-    category.children = children;
-
-    // Recursively load children's children
-    for (const child of children) {
-      await this.loadChildren(child);
-    }
-  }
-
   // ══════════════════════════════════════════════════════════════
   // GET CATEGORY BY ID
   // ══════════════════════════════════════════════════════════════
-  async findOne(id: string): Promise<object> {
+  async findOne(id: string) {
     const category = await this.prisma.category.findFirst({
       where: { id, deletedAt: null },
-      include: {
-        parent: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
-        children: {
-          where: { deletedAt: null },
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            position: true,
-            _count: {
-              select: {
-                products: true,
-              },
-            },
-          },
-          orderBy: { position: 'asc' },
-        },
-        _count: {
-          select: {
-            children: true,
-            products: true,
-          },
-        },
-      },
-    });
-
-    if (!category) {
-      throw new NotFoundException('Category not found');
-    }
-
-    // Get media
-    const media = await this.prisma.entityMedia.findMany({
-      where: {
-        entityType: 'Category',
-        entityId: id,
-      },
-      include: {
-        media: {
-          select: {
-            id: true,
-            storageUrl: true,
-            variants: true,
-            alt: true,
-          },
-        },
-      },
-    });
-
-    // Get breadcrumbs from path
-    const breadcrumbs = await this.getBreadcrumbs(category.pathIds);
-
-    return { ...category, media, breadcrumbs };
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  // GET CATEGORY BY SLUG
-  // ══════════════════════════════════════════════════════════════
-  async findBySlug(slug: string): Promise<object> {
-    const category = await this.prisma.category.findFirst({
-      where: { slug, deletedAt: null },
-      include: {
-        parent: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-          },
-        },
+      select: {
+        ...CATEGORY_SELECT,
+        createdBy: true,
+        updatedBy: true,
+        parent: { select: { id: true, name: true, slug: true } },
         children: {
           where: { deletedAt: null },
           select: {
@@ -504,283 +403,386 @@ export class CategoryService {
             name: true,
             slug: true,
             image: true,
+            icon: true,
             position: true,
-            _count: {
-              select: {
-                products: true,
-              },
-            },
+            isActive: true,
+            depth: true,
+            _count: { select: { children: true, products: true } },
           },
           orderBy: { position: 'asc' },
-        },
-        _count: {
-          select: {
-            children: true,
-            products: true,
-          },
         },
       },
     });
 
     if (!category) {
-      throw new NotFoundException('Category not found');
+      throw new NotFoundException({
+        message: 'Category not found',
+        resourceId: id,
+        resource: 'Category',
+      });
     }
 
-    // Get media
-    const media = await this.prisma.entityMedia.findMany({
-      where: {
-        entityType: 'Category',
-        entityId: category.id,
-      },
-      include: {
-        media: {
+    const [breadcrumbs, media] = await Promise.all([
+      this.loadBreadcrumbs(category.pathIds),
+      this.prisma.entityMedia.findMany({
+        where: { entityType: 'Category', entityId: id },
+        include: {
+          media: {
+            select: {
+              id: true,
+              storageUrl: true,
+              variants: true,
+              alt: true,
+              mimeType: true,
+            },
+          },
+        },
+        orderBy: [{ isMain: 'desc' }, { position: 'asc' }],
+      }),
+    ]);
+
+    return { ...category, breadcrumbs, media };
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // GET CATEGORY BY SLUG
+  // ══════════════════════════════════════════════════════════════
+  async findBySlug(slug: string) {
+    const category = await this.prisma.category.findFirst({
+      where: { slug: slug.toLowerCase(), deletedAt: null },
+      select: {
+        ...CATEGORY_SELECT,
+        parent: { select: { id: true, name: true, slug: true } },
+        children: {
+          where: { deletedAt: null, isActive: true },
           select: {
             id: true,
-            storageUrl: true,
-            variants: true,
-            alt: true,
+            name: true,
+            slug: true,
+            image: true,
+            icon: true,
+            position: true,
+            isActive: true,
+            _count: { select: { children: true, products: true } },
           },
+          orderBy: { position: 'asc' },
         },
       },
     });
 
-    // Get breadcrumbs
-    const breadcrumbs = await this.getBreadcrumbs(category.pathIds);
+    if (!category) {
+      throw new NotFoundException({
+        message: 'Category not found',
+        resourceSlug: slug,
+        resource: 'Category',
+      });
+    }
 
-    return { ...category, media, breadcrumbs };
+    const [breadcrumbs, media] = await Promise.all([
+      this.loadBreadcrumbs(category.pathIds),
+      this.prisma.entityMedia.findMany({
+        where: { entityType: 'Category', entityId: category.id },
+        include: {
+          media: {
+            select: {
+              id: true,
+              storageUrl: true,
+              variants: true,
+              alt: true,
+              mimeType: true,
+            },
+          },
+        },
+        orderBy: [{ isMain: 'desc' }, { position: 'asc' }],
+      }),
+    ]);
+
+    return { ...category, breadcrumbs, media };
   }
 
   // ══════════════════════════════════════════════════════════════
-  // GET BREADCRUMBS
+  // GET BREADCRUMBS (by ID)
   // ══════════════════════════════════════════════════════════════
-  private async getBreadcrumbs(pathIds: string | null): Promise<any[]> {
-    if (!pathIds) return [];
-
-    const ids = pathIds.split(',').filter(Boolean);
-    if (ids.length === 0) return [];
-
-    const categories = await this.prisma.category.findMany({
-      where: {
-        id: { in: ids },
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-      },
+  async getBreadcrumbs(id: string) {
+    const category = await this.prisma.category.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, name: true, slug: true, pathIds: true },
     });
 
-    // Order by pathIds order
-    return ids
-      .map((id) => categories.find((cat) => cat.id === id))
-      .filter(Boolean);
+    if (!category) {
+      throw new NotFoundException({
+        message: 'Category not found',
+        resourceId: id,
+      });
+    }
+
+    const ancestors = await this.loadBreadcrumbs(category.pathIds);
+    return [
+      ...ancestors,
+      { id: category.id, name: category.name, slug: category.slug },
+    ];
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // GET ANCESTORS
+  // ══════════════════════════════════════════════════════════════
+  async getAncestors(id: string) {
+    const category = await this.prisma.category.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, pathIds: true },
+    });
+
+    if (!category) {
+      throw new NotFoundException({
+        message: 'Category not found',
+        resourceId: id,
+      });
+    }
+
+    return this.loadBreadcrumbs(category.pathIds);
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // GET DESCENDANTS (flat list)
+  // ══════════════════════════════════════════════════════════════
+  async getDescendants(id: string) {
+    const category = await this.prisma.category.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!category) {
+      throw new NotFoundException({
+        message: 'Category not found',
+        resourceId: id,
+      });
+    }
+
+    const ids = await this.getDescendantIds(id);
+    if (ids.length === 0) return [];
+
+    return this.prisma.category.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      select: CATEGORY_SELECT,
+      orderBy: [{ depth: 'asc' }, { position: 'asc' }],
+    });
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // GET CATEGORY STATS (admin)
+  // ══════════════════════════════════════════════════════════════
+  async getStats(id: string) {
+    const category = await this.prisma.category.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, name: true, slug: true, depth: true, path: true },
+    });
+
+    if (!category) {
+      throw new NotFoundException({
+        message: 'Category not found',
+        resourceId: id,
+      });
+    }
+
+    const descendantIds = await this.getDescendantIds(id);
+    const allIds = [id, ...descendantIds];
+
+    const [directProducts, totalProducts, childCount, descendantCount] =
+      await Promise.all([
+        this.prisma.productCategory.count({ where: { categoryId: id } }),
+        this.prisma.productCategory.count({
+          where: { categoryId: { in: allIds } },
+        }),
+        this.prisma.category.count({
+          where: { parentId: id, deletedAt: null },
+        }),
+        Promise.resolve(descendantIds.length),
+      ]);
+
+    return {
+      category: {
+        id: category.id,
+        name: category.name,
+        slug: category.slug,
+        depth: category.depth,
+        path: category.path,
+      },
+      stats: { directProducts, totalProducts, childCount, descendantCount },
+    };
   }
 
   // ══════════════════════════════════════════════════════════════
   // UPDATE CATEGORY
   // ══════════════════════════════════════════════════════════════
-  async update(
-    id: string,
-    dto: UpdateCategoryDto,
-    updatedBy: string,
-  ): Promise<object> {
+  async update(id: string, dto: UpdateCategoryDto, updatedBy: string) {
     const existing = await this.prisma.category.findFirst({
       where: { id, deletedAt: null },
       select: {
         id: true,
         slug: true,
+        name: true,
         image: true,
         icon: true,
+        bannerImage: true,
         parentId: true,
+        path: true,
+        pathIds: true,
+        depth: true,
       },
     });
 
     if (!existing) {
-      throw new NotFoundException('Category not found');
+      throw new NotFoundException({
+        message: 'Category not found',
+        resourceId: id,
+      });
     }
 
-    // Check slug uniqueness if changing
+    // Slug uniqueness if changing
     if (dto.slug && dto.slug !== existing.slug) {
       const slugExists = await this.prisma.category.findFirst({
         where: { slug: dto.slug, deletedAt: null, id: { not: id } },
         select: { id: true },
       });
-
       if (slugExists) {
-        throw new ConflictException('Category with this slug already exists');
+        throw new ConflictException({
+          message: 'Category slug already exists',
+          field: 'slug',
+          conflictingId: slugExists.id,
+        });
       }
     }
 
-    // Verify media if changing
-    if (dto.image && dto.image !== existing.image) {
-      const media = await this.prisma.media.findFirst({
-        where: { id: dto.image, deletedAt: null },
-        select: { id: true },
-      });
-      if (!media) throw new BadRequestException('Invalid image media ID');
-    }
+    // Verify media
+    if (dto.image && dto.image !== existing.image)
+      await this.verifyMedia(dto.image, 'image');
+    if (dto.icon && dto.icon !== existing.icon)
+      await this.verifyMedia(dto.icon, 'icon');
+    if (dto.bannerImage && dto.bannerImage !== existing.bannerImage)
+      await this.verifyMedia(dto.bannerImage, 'bannerImage');
 
-    if (dto.icon && dto.icon !== existing.icon) {
-      const media = await this.prisma.media.findFirst({
-        where: { id: dto.icon, deletedAt: null },
-        select: { id: true },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.category.update({
+        where: { id },
+        data: {
+          ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.slug !== undefined && { slug: dto.slug }),
+          ...(dto.description !== undefined && {
+            description: dto.description,
+          }),
+          ...(dto.image !== undefined && { image: dto.image }),
+          ...(dto.icon !== undefined && { icon: dto.icon }),
+          ...(dto.bannerImage !== undefined && {
+            bannerImage: dto.bannerImage,
+          }),
+          ...(dto.position !== undefined && { position: dto.position }),
+          ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+          ...(dto.translations !== undefined && {
+            translations: dto.translations as Prisma.InputJsonValue,
+          }),
+          ...(dto.seo !== undefined && {
+            seo: dto.seo ? (dto.seo as Prisma.InputJsonValue) : Prisma.JsonNull,
+          }),
+          updatedBy,
+        },
       });
-      if (!media) throw new BadRequestException('Invalid icon media ID');
-    }
 
-    // Update category
-    const category = await this.prisma.category.update({
-      where: { id },
-      data: {
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.slug !== undefined && { slug: dto.slug }),
-        ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.image !== undefined && { image: dto.image }),
-        ...(dto.icon !== undefined && { icon: dto.icon }),
-        ...(dto.position !== undefined && { position: dto.position }),
-        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
-        ...(dto.translations !== undefined && {
-          translations: dto.translations as Prisma.InputJsonValue,
-        }),
-        ...(dto.seo !== undefined && {
-          seo: dto.seo ? (dto.seo as Prisma.InputJsonValue) : Prisma.JsonNull,
-        }),
-        updatedBy,
-      },
+      // Update image media
+      if (dto.image !== undefined && dto.image !== existing.image) {
+        if (existing.image)
+          await this.unlinkMedia(tx, id, existing.image, 'thumbnail');
+        if (dto.image)
+          await this.linkMedia(tx, id, dto.image, 'thumbnail', true);
+      }
+      if (dto.icon !== undefined && dto.icon !== existing.icon) {
+        if (existing.icon)
+          await this.unlinkMedia(tx, id, existing.icon, 'icon');
+        if (dto.icon) await this.linkMedia(tx, id, dto.icon, 'icon');
+      }
+      if (
+        dto.bannerImage !== undefined &&
+        dto.bannerImage !== existing.bannerImage
+      ) {
+        if (existing.bannerImage)
+          await this.unlinkMedia(tx, id, existing.bannerImage, 'banner');
+        if (dto.bannerImage)
+          await this.linkMedia(tx, id, dto.bannerImage, 'banner');
+      }
     });
 
-    // Update media relationships if changed
-    if (dto.image && dto.image !== existing.image) {
-      // Remove old
-      if (existing.image) {
-        await this.prisma.entityMedia.deleteMany({
-          where: {
-            entityType: 'Category',
-            entityId: id,
-            purpose: 'thumbnail',
-          },
-        });
-        await this.prisma.media.update({
-          where: { id: existing.image },
-          data: { referenceCount: { decrement: 1 } },
-        });
-      }
-
-      // Add new
-      await this.prisma.entityMedia.create({
-        data: {
-          entityType: 'Category',
-          entityId: id,
-          mediaId: dto.image,
-          purpose: 'thumbnail',
-          isMain: true,
-        },
-      });
-      await this.prisma.media.update({
-        where: { id: dto.image },
-        data: { referenceCount: { increment: 1 } },
-      });
-    }
-
-    if (dto.icon && dto.icon !== existing.icon) {
-      // Remove old
-      if (existing.icon) {
-        await this.prisma.entityMedia.deleteMany({
-          where: {
-            entityType: 'Category',
-            entityId: id,
-            purpose: 'icon',
-          },
-        });
-        await this.prisma.media.update({
-          where: { id: existing.icon },
-          data: { referenceCount: { decrement: 1 } },
-        });
-      }
-
-      // Add new
-      await this.prisma.entityMedia.create({
-        data: {
-          entityType: 'Category',
-          entityId: id,
-          mediaId: dto.icon,
-          purpose: 'icon',
-        },
-      });
-      await this.prisma.media.update({
-        where: { id: dto.icon },
-        data: { referenceCount: { increment: 1 } },
-      });
-    }
-
-    // If slug changed, update paths of all descendants
+    // If slug changed → rebuild all descendant paths
     if (dto.slug && dto.slug !== existing.slug) {
-      const { path, pathIds, depth } = await this.buildPath(category.parentId);
+      const { path, pathIds, depth } = await this.buildPath(
+        existing.parentId,
+        dto.slug,
+      );
       await this.prisma.category.update({
         where: { id },
         data: { path, pathIds, depth },
       });
-      await this.updateDescendantPaths(id, path, pathIds, depth);
+      await this.rebuildDescendantPaths(id);
     }
 
-    this.logger.log(`Category updated: ${category.slug} by ${updatedBy}`);
-    return category;
+    this.logger.log(`Category updated: "${existing.name}" by ${updatedBy}`);
+    return this.findOne(id);
   }
 
   // ══════════════════════════════════════════════════════════════
   // MOVE CATEGORY
   // ══════════════════════════════════════════════════════════════
-  async move(
-    id: string,
-    dto: MoveCategoryDto,
-    updatedBy: string,
-  ): Promise<object> {
+  async move(id: string, dto: MoveCategoryDto, updatedBy: string) {
     const category = await this.prisma.category.findFirst({
       where: { id, deletedAt: null },
       select: {
         id: true,
-        parentId: true,
+        name: true,
+        slug: true,
         pathIds: true,
+        parentId: true,
       },
     });
 
     if (!category) {
-      throw new NotFoundException('Category not found');
+      throw new NotFoundException({
+        message: 'Category not found',
+        resourceId: id,
+      });
     }
 
-    // Prevent moving to itself or its own descendant
+    // Prevent moving to itself
     if (dto.newParentId === id) {
-      throw new BadRequestException('Cannot move category to itself');
+      throw new BadRequestException({
+        message: 'Cannot move a category into itself',
+      });
     }
 
-    if (dto.newParentId && category.pathIds) {
-      const pathIdsArray = category.pathIds.split(',');
-      if (pathIdsArray.includes(dto.newParentId)) {
-        throw new BadRequestException(
-          'Cannot move category to its own descendant',
-        );
-      }
-    }
-
-    // Check new parent exists
+    // Prevent moving to own descendant
     if (dto.newParentId) {
+      const descendantIds = await this.getDescendantIds(id);
+      if (descendantIds.includes(dto.newParentId)) {
+        throw new BadRequestException({
+          message: 'Cannot move a category into one of its own descendants',
+        });
+      }
+
       const newParent = await this.prisma.category.findFirst({
         where: { id: dto.newParentId, deletedAt: null },
         select: { id: true },
       });
-
       if (!newParent) {
-        throw new NotFoundException('New parent category not found');
+        throw new NotFoundException({
+          message: 'New parent category not found',
+          parentId: dto.newParentId,
+        });
       }
     }
 
     // Build new path
     const { path, pathIds, depth } = await this.buildPath(
       dto.newParentId || null,
+      category.slug,
     );
 
-    // Update category
     await this.prisma.category.update({
       where: { id },
       data: {
@@ -793,16 +795,35 @@ export class CategoryService {
       },
     });
 
-    // Update all descendants
-    await this.updateDescendantPaths(id, path, pathIds, depth);
+    // Rebuild all descendants
+    await this.rebuildDescendantPaths(id);
 
-    this.logger.log(`Category moved: ${id} by ${updatedBy}`);
-
+    this.logger.log(
+      `Category moved: "${category.name}" to parent=${dto.newParentId ?? 'root'} by ${updatedBy}`,
+    );
     return this.findOne(id);
   }
 
   // ══════════════════════════════════════════════════════════════
-  // DELETE CATEGORY (SOFT DELETE WITH DESCENDANTS)
+  // REORDER CATEGORIES (within same parent)
+  // ══════════════════════════════════════════════════════════════
+  async reorder(dto: ReorderCategoriesDto, updatedBy: string) {
+    const updates = dto.items.map((item) =>
+      this.prisma.category.update({
+        where: { id: item.id },
+        data: { position: item.position, updatedBy },
+      }),
+    );
+
+    await this.prisma.$transaction(updates);
+    this.logger.log(
+      `Categories reordered within parent=${dto.parentId ?? 'root'} by ${updatedBy}`,
+    );
+    return { reordered: dto.items.length };
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // DELETE CATEGORY (SOFT + descendants)
   // ══════════════════════════════════════════════════════════════
   async remove(id: string, deletedBy: string): Promise<void> {
     const category = await this.prisma.category.findFirst({
@@ -810,118 +831,52 @@ export class CategoryService {
       select: {
         id: true,
         slug: true,
-        pathIds: true,
+        name: true,
         image: true,
         icon: true,
+        bannerImage: true,
       },
     });
 
     if (!category) {
-      throw new NotFoundException('Category not found');
+      throw new NotFoundException({
+        message: 'Category not found',
+        resourceId: id,
+      });
     }
 
-    // Check if has products
+    // Check if category or any descendant has products
+    const descendantIds = await this.getDescendantIds(id);
+    const allIds = [id, ...descendantIds];
+
     const productCount = await this.prisma.productCategory.count({
-      where: { categoryId: id },
+      where: { categoryId: { in: allIds } },
     });
 
     if (productCount > 0) {
-      throw new BadRequestException(
-        `Cannot delete category. ${productCount} products are using this category`,
-      );
+      throw new BadRequestException({
+        message: `Cannot delete category "${category.name}". It (or its descendants) has ${productCount} product(s). Reassign products first.`,
+        productCount,
+        affectedCategories: allIds.length,
+      });
     }
 
-    // Find all descendants using raw SQL
-    const descendantIds = await this.prisma.$queryRaw<Array<{ id: string }>>`
-      SELECT id
-      FROM categories
-      WHERE deleted_at IS NULL
-        AND (
-          path_ids LIKE ${id + ',%'}
-          OR path_ids LIKE ${'%,' + id + ',%'}
-          OR path_ids LIKE ${'%,' + id}
-          OR path_ids = ${id}
-        )
-    `;
-
-    const idsToDelete = [id, ...descendantIds.map((d) => d.id)];
-
-    // Soft delete this category and all descendants
+    // Soft delete category + all descendants
     await this.prisma.category.updateMany({
-      where: {
-        id: { in: idsToDelete },
-      },
-      data: {
-        deletedAt: new Date(),
-        deletedBy,
-      },
+      where: { id: { in: allIds } },
+      data: { deletedAt: new Date(), deletedBy },
     });
 
-    // Remove media relationships
-    if (category.image) {
-      await this.prisma.entityMedia.deleteMany({
-        where: {
-          entityType: 'Category',
-          entityId: id,
-          purpose: 'thumbnail',
-        },
-      });
-      await this.prisma.media.update({
-        where: { id: category.image },
-        data: { referenceCount: { decrement: 1 } },
-      });
-    }
+    // Unlink media
+    if (category.image)
+      await this.unlinkMedia(this.prisma, id, category.image, 'thumbnail');
+    if (category.icon)
+      await this.unlinkMedia(this.prisma, id, category.icon, 'icon');
+    if (category.bannerImage)
+      await this.unlinkMedia(this.prisma, id, category.bannerImage, 'banner');
 
-    if (category.icon) {
-      await this.prisma.entityMedia.deleteMany({
-        where: {
-          entityType: 'Category',
-          entityId: id,
-          purpose: 'icon',
-        },
-      });
-      await this.prisma.media.update({
-        where: { id: category.icon },
-        data: { referenceCount: { decrement: 1 } },
-      });
-    }
-
-    this.logger.log(`Category deleted: ${category.slug} by ${deletedBy}`);
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  // GET CATEGORY TREE (Full hierarchy)
-  // ══════════════════════════════════════════════════════════════
-  async getTree(): Promise<any[]> {
-    const categories = await this.prisma.category.findMany({
-      where: {
-        deletedAt: null,
-        parentId: null, // Start with roots
-      },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        image: true,
-        icon: true,
-        position: true,
-        depth: true,
-        isActive: true,
-        _count: {
-          select: {
-            children: true,
-            products: true,
-          },
-        },
-      },
-      orderBy: [{ position: 'asc' }, { name: 'asc' }],
-    });
-
-    // Load children for each root
-    for (const cat of categories) {
-      await this.loadChildren(cat);
-    }
-
-    return categories;
+    this.logger.log(
+      `Category deleted: "${category.name}" + ${descendantIds.length} descendants by ${deletedBy}`,
+    );
   }
 }

@@ -4,6 +4,7 @@ import {
   IsEnum,
   IsNumber,
   Min,
+  Max,
   IsBoolean,
   IsOptional,
   IsInt,
@@ -17,137 +18,98 @@ import { Transform } from 'class-transformer';
 import { CouponDiscountType } from '@prisma/client';
 
 export class CreateCouponDto {
-  @ApiProperty({
-    example: 'Summer Sale 20% Off',
-    description: 'Display name of the coupon',
-  })
+  @ApiProperty({ example: 'Summer Sale 20% Off' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(191)
   @Transform(({ value }) => value?.trim())
   name!: string;
 
-  @ApiProperty({
-    example: 'SUMMER20',
-    description: 'Unique coupon code',
-  })
+  @ApiProperty({ example: 'SUMMER20' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
   @Transform(({ value }) => value?.trim().toUpperCase())
   code!: string;
 
-  @ApiProperty({
-    enum: CouponDiscountType,
-    example: CouponDiscountType.PERCENT,
-    description: 'Type of discount',
-  })
+  @ApiPropertyOptional({ example: 'Save 20% on summer items' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  description?: string;
+
+  @ApiProperty({ enum: CouponDiscountType, example: 'PERCENT' })
   @IsEnum(CouponDiscountType)
   discountType!: CouponDiscountType;
 
   @ApiProperty({
     example: 20,
-    description: 'Discount value (percentage or fixed amount)',
+    description: 'Percentage (0-100) or fixed amount',
   })
   @IsNumber()
   @Min(0)
-  value!: number;
+  discountValue!: number; // ← matches schema
 
-  @ApiPropertyOptional({
-    example: false,
-    description: 'Enable free shipping',
-  })
+  @ApiPropertyOptional({ example: false })
   @IsOptional()
   @IsBoolean()
   freeShipping?: boolean;
 
-  @ApiPropertyOptional({
-    example: 100,
-    description: 'Minimum order amount required',
-  })
+  @ApiPropertyOptional({ example: 100 })
   @IsOptional()
   @IsNumber()
   @Min(0)
-  minimumSpend?: number;
+  minOrderValue?: number; // ← matches schema
 
-  @ApiPropertyOptional({
-    example: 1000,
-    description: 'Maximum order amount allowed',
-  })
+  @ApiPropertyOptional({ example: 10000 })
   @IsOptional()
   @IsNumber()
   @Min(0)
-  maximumSpend?: number;
+  maxOrderValue?: number; // ← matches schema
 
-  @ApiPropertyOptional({
-    example: 100,
-    description: 'Total usage limit for this coupon',
-  })
+  @ApiPropertyOptional({ example: 500 })
   @IsOptional()
   @IsInt()
   @Min(1)
-  usageLimitPerCoupon?: number;
+  usageLimit?: number; // ← matches schema
 
-  @ApiPropertyOptional({
-    example: 1,
-    description: 'Usage limit per customer',
-  })
+  @ApiPropertyOptional({ example: 1 })
   @IsOptional()
   @IsInt()
   @Min(1)
-  usageLimitPerCustomer?: number;
+  userUsageLimit?: number; // ← matches schema
 
-  @ApiPropertyOptional({
-    example: true,
-    description: 'Is coupon active',
+  @ApiProperty({
+    example: '2026-01-01T00:00:00Z',
+    description: 'Coupon valid from',
   })
+  @IsDateString()
+  validFrom!: string; // ← matches schema
+
+  @ApiProperty({
+    example: '2026-12-31T23:59:59Z',
+    description: 'Coupon valid to',
+  })
+  @IsDateString()
+  validTo!: string; // ← matches schema
+
+  @ApiPropertyOptional({ example: true })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiPropertyOptional({
-    example: '2026-03-01T00:00:00Z',
-    description: 'Start date for coupon validity',
-  })
-  @IsOptional()
-  @IsDateString()
-  startDate?: string;
-
-  @ApiPropertyOptional({
-    example: '2026-03-31T23:59:59Z',
-    description: 'End date for coupon validity',
-  })
-  @IsOptional()
-  @IsDateString()
-  endDate?: string;
-
-  @ApiPropertyOptional({
-    type: Object,
-    description: 'Translations for coupon name',
-    example: {
-      bn: { name: 'গ্রীষ্মকালীন ছাড় ২০%' },
-      ar: { name: 'خصم الصيف ٢٠٪' },
-    },
-  })
+  @ApiPropertyOptional({ type: Object })
   @IsOptional()
   @IsObject()
   translations?: Record<string, any>;
 
-  @ApiPropertyOptional({
-    type: [String],
-    description: 'Product IDs to include (empty = all products)',
-    example: ['product_id_1', 'product_id_2'],
-  })
+  @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   products?: string[];
 
-  @ApiPropertyOptional({
-    type: [String],
-    description: 'Category IDs to include (empty = all categories)',
-    example: ['category_id_1', 'category_id_2'],
-  })
+  @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })

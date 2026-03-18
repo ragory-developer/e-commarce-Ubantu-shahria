@@ -902,6 +902,7 @@ enum AdminRole {
 }
 
 enum AdminPermission {
+  // existing fine-grained
   PRODUCT_CREATE
   PRODUCT_READ
   PRODUCT_UPDATE
@@ -923,6 +924,14 @@ enum AdminPermission {
   SETTINGS_MANAGE
   LOGS_VIEW
   RETURN_MANAGE
+  // ADD THESE — referenced by controllers
+  MANAGE_PRODUCTS
+  MANAGE_COUPONS
+  VIEW_PRODUCTS
+  MANAGE_PROMOTIONS
+  MANAGE_SHIPPING
+  MANAGE_CURRENCIES
+  MANAGE_TAX
 }
 
 enum AuthUserType {

@@ -87,10 +87,11 @@ export class PrismaService
             if (!SOFT_DELETE_MODELS.has(model)) {
               return query(args);
             }
-            // args.where = {
-            //   ...args.where,
-            //   deletedAt: null,
-            // } as any;
+            // Restore the deletedAt filter
+            (args.where as any) = {
+              ...args.where,
+              deletedAt: null,
+            };
             return query(args);
           },
 

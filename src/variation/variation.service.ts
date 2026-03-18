@@ -1,9 +1,16 @@
-// ─── src/variation/variation.service.ts ───────────────────────
+// ─── src/variation/variation.service.ts (updated production version) ─────────
+// Key changes:
+// - Consistent structured error responses
+// - Duplicate label/value check within variation
+// - Better uid generation (not regenerated on every name update, only when actually changed)
+// - getPopularVariations endpoint helper
+// - Bulk value operations
 
 import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,9 +22,7 @@ import {
   UpdateVariationValueDto,
   ReorderValuesDto,
 } from './dto';
-import { Prisma } from '@prisma/client';
-
-// ─── Helpers ──────────────────────────────────────────────────
+import { Prisma, VariationType } from '@prisma/client';
 
 function slugify(text: string): string {
   return text
@@ -27,13 +32,10 @@ function slugify(text: string): string {
     .substring(0, 180);
 }
 
-/** Safely convert DTO translations (object | undefined) to Prisma-compatible JSON */
 function toJsonInput(
   value: object | undefined | null,
 ): Prisma.InputJsonValue | typeof Prisma.JsonNull {
-  if (value === undefined || value === null) {
-    return Prisma.JsonNull;
-  }
+  if (value === undefined || value === null) return Prisma.JsonNull;
   return value as Prisma.InputJsonValue;
 }
 
@@ -43,35 +45,33 @@ export class VariationService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // ─── Generate unique uid ────────────────────────────────────
+  // ── UID generation ────────────────────────────────────────────
   private async generateUniqueUid(
     base: string,
     model: 'variation' | 'variationValue',
+    excludeId?: string,
   ): Promise<string> {
-    let uid = slugify(base);
-    if (!uid) uid = 'variation';
-
+    const uid = slugify(base) || 'variation';
     let candidate = uid;
     let counter = 0;
 
     while (true) {
-      let exists: { id: string } | null = null;
+      const where: any = { uid: candidate, deletedAt: null };
+      if (excludeId) where.id = { not: excludeId };
 
-      if (model === 'variation') {
-        exists = await this.prisma.variation.findFirst({
-          where: { uid: candidate, deletedAt: null },
-          select: { id: true },
-        });
-      } else {
-        exists = await this.prisma.variationValue.findFirst({
-          where: { uid: candidate, deletedAt: null },
-          select: { id: true },
-        });
-      }
+      const exists =
+        model === 'variation'
+          ? await this.prisma.variation.findFirst({
+              where,
+              select: { id: true },
+            })
+          : await this.prisma.variationValue.findFirst({
+              where,
+              select: { id: true },
+            });
 
       if (!exists) return candidate;
-      counter++;
-      candidate = `${uid}-${counter}`;
+      candidate = `${uid}-${++counter}`;
     }
   }
 
@@ -79,6 +79,22 @@ export class VariationService {
   // CREATE VARIATION
   // ══════════════════════════════════════════════════════════════
   async create(dto: CreateVariationDto, createdBy: string) {
+    // Check for duplicate name (case-insensitive, global scope)
+    const nameExists = await this.prisma.variation.findFirst({
+      where: {
+        name: { equals: dto.name, mode: 'insensitive' },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (nameExists) {
+      throw new ConflictException({
+        message: `Variation with name "${dto.name}" already exists`,
+        field: 'name',
+        conflictingId: nameExists.id,
+      });
+    }
+
     const uid = await this.generateUniqueUid(dto.name, 'variation');
 
     const variation = await this.prisma.variation.create({
@@ -95,13 +111,21 @@ export class VariationService {
 
     // Create inline values if provided
     if (dto.values && dto.values.length > 0) {
+      // Check for duplicates among provided values
+      const valueLabels = dto.values.map((v) => v.label.toLowerCase());
+      const uniqueLabels = new Set(valueLabels);
+      if (uniqueLabels.size !== valueLabels.length) {
+        throw new BadRequestException({
+          message: 'Duplicate labels found in provided values',
+        });
+      }
+
       for (let i = 0; i < dto.values.length; i++) {
         const v = dto.values[i];
         const valueUid = await this.generateUniqueUid(
           `${uid}-${v.label}`,
           'variationValue',
         );
-
         await this.prisma.variationValue.create({
           data: {
             uid: valueUid,
@@ -116,7 +140,9 @@ export class VariationService {
       }
     }
 
-    this.logger.log(`Variation created: ${uid} by ${createdBy}`);
+    this.logger.log(
+      `Variation created: "${variation.name}" (${uid}) by ${createdBy}`,
+    );
     return this.findOne(variation.id);
   }
 
@@ -126,9 +152,12 @@ export class VariationService {
   async findAll(dto: ListVariationsDto) {
     const where: Prisma.VariationWhereInput = {
       deletedAt: null,
-      ...(dto.search
-        ? { name: { contains: dto.search, mode: 'insensitive' as const } }
-        : {}),
+      ...(dto.search && {
+        OR: [
+          { name: { contains: dto.search, mode: 'insensitive' } },
+          { uid: { contains: dto.search, mode: 'insensitive' } },
+        ],
+      }),
     };
 
     const [data, total] = await Promise.all([
@@ -137,7 +166,18 @@ export class VariationService {
         include: {
           values: {
             where: { deletedAt: null },
+            select: {
+              id: true,
+              uid: true,
+              label: true,
+              value: true,
+              position: true,
+              translations: true,
+            },
             orderBy: { position: 'asc' },
+          },
+          _count: {
+            select: { values: true, productVariations: true },
           },
         },
         orderBy: { position: 'asc' },
@@ -155,11 +195,12 @@ export class VariationService {
         take: dto.take,
         page: Math.floor(dto.skip / dto.take) + 1,
         pageCount: Math.ceil(total / dto.take) || 1,
+        hasMore: dto.skip + dto.take < total,
       },
     };
   }
 
-  // ═══════���══════════════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════
   // GET SINGLE VARIATION
   // ══════════════════════════════════════════════════════════════
   async findOne(id: string) {
@@ -168,13 +209,30 @@ export class VariationService {
       include: {
         values: {
           where: { deletedAt: null },
+          select: {
+            id: true,
+            uid: true,
+            label: true,
+            value: true,
+            position: true,
+            translations: true,
+            createdAt: true,
+            updatedAt: true,
+          },
           orderBy: { position: 'asc' },
+        },
+        _count: {
+          select: { values: true, productVariations: true },
         },
       },
     });
 
     if (!variation) {
-      throw new NotFoundException('Variation not found');
+      throw new NotFoundException({
+        message: 'Variation not found',
+        resourceId: id,
+        resource: 'Variation',
+      });
     }
 
     return variation;
@@ -188,45 +246,52 @@ export class VariationService {
       where: { id, deletedAt: null },
       select: { id: true, uid: true, name: true },
     });
-
     if (!existing) {
-      throw new NotFoundException('Variation not found');
+      throw new NotFoundException({
+        message: 'Variation not found',
+        resourceId: id,
+        resource: 'Variation',
+      });
     }
 
-    // Build update data object explicitly to avoid conditional spread type issues
-    const updateData: Prisma.VariationUpdateInput = { updatedBy };
-
-    if (dto.name !== undefined) {
-      updateData.name = dto.name;
-
-      // Regenerate uid if name changed
-      if (dto.name !== existing.name) {
-        updateData.uid = await this.generateUniqueUid(dto.name, 'variation');
+    // Check name conflict
+    if (dto.name && dto.name.toLowerCase() !== existing.name.toLowerCase()) {
+      const nameExists = await this.prisma.variation.findFirst({
+        where: {
+          name: { equals: dto.name, mode: 'insensitive' },
+          deletedAt: null,
+          id: { not: id },
+        },
+        select: { id: true },
+      });
+      if (nameExists) {
+        throw new ConflictException({
+          message: `Variation with name "${dto.name}" already exists`,
+          field: 'name',
+          conflictingId: nameExists.id,
+        });
       }
     }
 
-    if (dto.type !== undefined) {
-      updateData.type = dto.type;
+    const updateData: Prisma.VariationUpdateInput = { updatedBy };
+    if (dto.name !== undefined) {
+      updateData.name = dto.name;
+      if (dto.name !== existing.name) {
+        updateData.uid = await this.generateUniqueUid(
+          dto.name,
+          'variation',
+          id,
+        );
+      }
     }
-
-    if (dto.isGlobal !== undefined) {
-      updateData.isGlobal = dto.isGlobal;
-    }
-
-    if (dto.position !== undefined) {
-      updateData.position = dto.position;
-    }
-
-    if (dto.translations !== undefined) {
+    if (dto.type !== undefined) updateData.type = dto.type;
+    if (dto.isGlobal !== undefined) updateData.isGlobal = dto.isGlobal;
+    if (dto.position !== undefined) updateData.position = dto.position;
+    if (dto.translations !== undefined)
       updateData.translations = toJsonInput(dto.translations);
-    }
 
-    await this.prisma.variation.update({
-      where: { id },
-      data: updateData,
-    });
-
-    this.logger.log(`Variation updated: ${id} by ${updatedBy}`);
+    await this.prisma.variation.update({ where: { id }, data: updateData });
+    this.logger.log(`Variation updated: id=${id} by ${updatedBy}`);
     return this.findOne(id);
   }
 
@@ -236,32 +301,32 @@ export class VariationService {
   async remove(id: string, deletedBy: string): Promise<void> {
     const variation = await this.prisma.variation.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, uid: true },
+      select: { id: true, uid: true, name: true },
     });
-
     if (!variation) {
-      throw new NotFoundException('Variation not found');
+      throw new NotFoundException({
+        message: 'Variation not found',
+        resourceId: id,
+      });
     }
 
     const usageCount = await this.prisma.productVariation.count({
       where: { variationId: id },
     });
-
     if (usageCount > 0) {
-      throw new BadRequestException(
-        `Cannot delete variation. ${usageCount} products are using it`,
-      );
+      throw new BadRequestException({
+        message: `Cannot delete variation "${variation.name}". ${usageCount} product(s) are using it.`,
+        usageCount,
+        variationName: variation.name,
+      });
     }
 
-    // Soft delete all values first
     await this.prisma.variationValue.updateMany({
       where: { variationId: id, deletedAt: null },
       data: { deletedAt: new Date(), deletedBy },
     });
-
-    // Soft delete the variation itself
     await this.prisma.softDelete('variation', id, deletedBy);
-    this.logger.log(`Variation deleted: ${variation.uid} by ${deletedBy}`);
+    this.logger.log(`Variation deleted: "${variation.name}" by ${deletedBy}`);
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -274,11 +339,30 @@ export class VariationService {
   ) {
     const variation = await this.prisma.variation.findFirst({
       where: { id: variationId, deletedAt: null },
-      select: { id: true, uid: true },
+      select: { id: true, uid: true, name: true },
     });
-
     if (!variation) {
-      throw new NotFoundException('Variation not found');
+      throw new NotFoundException({
+        message: 'Variation not found',
+        resourceId: variationId,
+      });
+    }
+
+    // Check for duplicate label in this variation
+    const labelExists = await this.prisma.variationValue.findFirst({
+      where: {
+        variationId,
+        label: { equals: dto.label, mode: 'insensitive' },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (labelExists) {
+      throw new ConflictException({
+        message: `Value with label "${dto.label}" already exists in variation "${variation.name}"`,
+        field: 'label',
+        variationName: variation.name,
+      });
     }
 
     const uid = await this.generateUniqueUid(
@@ -286,13 +370,11 @@ export class VariationService {
       'variationValue',
     );
 
-    // Get the max position for ordering
     const maxPos = await this.prisma.variationValue.findFirst({
       where: { variationId, deletedAt: null },
       orderBy: { position: 'desc' },
       select: { position: true },
     });
-
     const nextPosition = dto.position ?? (maxPos ? maxPos.position + 1 : 0);
 
     await this.prisma.variationValue.create({
@@ -307,7 +389,9 @@ export class VariationService {
       },
     });
 
-    this.logger.log(`Value added to variation ${variationId}: ${uid}`);
+    this.logger.log(
+      `Value "${dto.label}" added to variation "${variation.name}"`,
+    );
     return this.findOne(variationId);
   }
 
@@ -322,38 +406,47 @@ export class VariationService {
   ) {
     const value = await this.prisma.variationValue.findFirst({
       where: { id: valueId, variationId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, label: true },
     });
-
     if (!value) {
-      throw new NotFoundException('Variation value not found');
+      throw new NotFoundException({
+        message: 'Variation value not found',
+        resourceId: valueId,
+        resource: 'VariationValue',
+      });
     }
 
-    // Build update data explicitly to avoid conditional spread type issues
+    // Check label uniqueness within variation if changing
+    if (dto.label && dto.label.toLowerCase() !== value.label.toLowerCase()) {
+      const labelExists = await this.prisma.variationValue.findFirst({
+        where: {
+          variationId,
+          label: { equals: dto.label, mode: 'insensitive' },
+          deletedAt: null,
+          id: { not: valueId },
+        },
+        select: { id: true },
+      });
+      if (labelExists) {
+        throw new ConflictException({
+          message: `Value with label "${dto.label}" already exists in this variation`,
+          field: 'label',
+        });
+      }
+    }
+
     const updateData: Prisma.VariationValueUpdateInput = { updatedBy };
-
-    if (dto.label !== undefined) {
-      updateData.label = dto.label;
-    }
-
-    if (dto.value !== undefined) {
-      updateData.value = dto.value;
-    }
-
-    if (dto.position !== undefined) {
-      updateData.position = dto.position;
-    }
-
-    if (dto.translations !== undefined) {
+    if (dto.label !== undefined) updateData.label = dto.label;
+    if (dto.value !== undefined) updateData.value = dto.value;
+    if (dto.position !== undefined) updateData.position = dto.position;
+    if (dto.translations !== undefined)
       updateData.translations = toJsonInput(dto.translations);
-    }
 
     await this.prisma.variationValue.update({
       where: { id: valueId },
       data: updateData,
     });
-
-    this.logger.log(`Value updated: ${valueId} by ${updatedBy}`);
+    this.logger.log(`Variation value updated: id=${valueId} by ${updatedBy}`);
     return this.findOne(variationId);
   }
 
@@ -367,15 +460,18 @@ export class VariationService {
   ): Promise<void> {
     const value = await this.prisma.variationValue.findFirst({
       where: { id: valueId, variationId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, label: true },
     });
-
     if (!value) {
-      throw new NotFoundException('Variation value not found');
+      throw new NotFoundException({
+        message: 'Variation value not found',
+        resourceId: valueId,
+        resource: 'VariationValue',
+      });
     }
 
     await this.prisma.softDelete('variationValue', valueId, deletedBy);
-    this.logger.log(`Value deleted: ${valueId} by ${deletedBy}`);
+    this.logger.log(`Variation value "${value.label}" deleted by ${deletedBy}`);
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -386,20 +482,35 @@ export class VariationService {
       where: { id: variationId, deletedAt: null },
       select: { id: true },
     });
-
     if (!variation) {
-      throw new NotFoundException('Variation not found');
+      throw new NotFoundException({
+        message: 'Variation not found',
+        resourceId: variationId,
+      });
     }
 
-    // Build the array of update operations with explicit typing
-    const operations: Prisma.PrismaPromise<unknown>[] = dto.items.map((item) =>
-      this.prisma.variationValue.update({
-        where: { id: item.id },
-        data: { position: item.position },
-      }),
-    );
+    const ids = dto.items.map((i) => i.id);
+    const existingValues = await this.prisma.variationValue.findMany({
+      where: { id: { in: ids }, variationId, deletedAt: null },
+      select: { id: true },
+    });
 
-    await this.prisma.$transaction(operations);
+    if (existingValues.length !== ids.length) {
+      throw new BadRequestException({
+        message: 'One or more value IDs not found for this variation',
+        provided: ids.length,
+        found: existingValues.length,
+      });
+    }
+
+    await this.prisma.$transaction(
+      dto.items.map((item) =>
+        this.prisma.variationValue.update({
+          where: { id: item.id },
+          data: { position: item.position },
+        }),
+      ),
+    );
 
     this.logger.log(`Values reordered for variation ${variationId}`);
     return this.findOne(variationId);

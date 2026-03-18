@@ -210,8 +210,8 @@ export class TaxController {
     status: 400,
     description: 'Cannot delete tax class that is in use by products',
   })
-  removeClass(@Param('id') id: string, @Req() req: any) {
-    return this.taxService.removeTaxClass(id, req.user.sub);
+  async removeClass(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.taxService.removeTaxClass(id, user.id);
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -390,7 +390,7 @@ export class TaxController {
     status: 404,
     description: 'Tax rate not found',
   })
-  removeRate(@Param('id') id: string, @Req() req: any) {
-    return this.taxService.removeTaxRate(id, req.user.sub);
+  async removeRate(@Param('id') id: string, @CurrentUser() user: RequestUser) {
+    return this.taxService.removeTaxRate(id, user.id);
   }
 }
