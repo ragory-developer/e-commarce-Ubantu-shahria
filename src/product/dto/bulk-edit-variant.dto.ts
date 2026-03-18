@@ -14,6 +14,7 @@ export class BulkEditVariantDto {
       'inStock',
       'qty',
     ],
+    description: 'Field to update across all variants',
   })
   @IsString()
   @IsNotEmpty()
@@ -29,7 +30,8 @@ export class BulkEditVariantDto {
 
   @ApiProperty({
     example: 30,
-    description: 'New value for the field (type matches the field)',
+    description:
+      'New value — type must match field (number for price/qty, boolean for stock flags)',
   })
   @IsNotEmpty()
   value!: unknown;

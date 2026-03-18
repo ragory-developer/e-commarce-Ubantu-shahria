@@ -14,14 +14,22 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 
 export class ListProductsDto {
-  @ApiPropertyOptional({ example: 0, default: 0 })
+  @ApiPropertyOptional({
+    example: 0,
+    default: 0,
+    description: 'Records to skip',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   skip: number = 0;
 
-  @ApiPropertyOptional({ example: 20, default: 20 })
+  @ApiPropertyOptional({
+    example: 20,
+    default: 20,
+    description: 'Records per page (max 100)',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -30,19 +38,26 @@ export class ListProductsDto {
   take: number = 20;
 
   @ApiPropertyOptional({
-    example: 't-shirt',
-    description: 'Search by name/sku',
+    example: 'cotton shirt',
+    description: 'Search by name or SKU',
   })
   @IsOptional()
   @IsString()
+  @Transform(({ value }) => value?.trim())
   search?: string;
 
-  @ApiPropertyOptional({ example: 'clx_brand_001' })
+  @ApiPropertyOptional({
+    example: 'clx_brand_001',
+    description: 'Filter by brand ID',
+  })
   @IsOptional()
   @IsString()
   brandId?: string;
 
-  @ApiPropertyOptional({ example: 'clx_cat_001' })
+  @ApiPropertyOptional({
+    example: 'clx_cat_001',
+    description: 'Filter by category ID',
+  })
   @IsOptional()
   @IsString()
   categoryId?: string;
@@ -55,24 +70,57 @@ export class ListProductsDto {
   @IsString()
   tagId?: string;
 
-  @ApiPropertyOptional({ example: true })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Filter by active status',
+  })
   @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
   @IsBoolean()
   isActive?: boolean;
 
   @ApiPropertyOptional({
     example: true,
+    description: 'Filter by featured status',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  isFeatured?: boolean;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Filter to only in-stock products',
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  inStock?: boolean;
+
+  @ApiPropertyOptional({
+    example: false,
     default: false,
     description:
-      'Return full product details (same shape as GET /products/:id). Default: false (summary mode)',
+      'Return full product detail (same as GET /products/:id). Default is summary mode.',
   })
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   detail: boolean = false;
 
-  // ─── Price range filter ─────────────────────────────────────
+  // ─── Price range ─────────────────────────────────────────────
   @ApiPropertyOptional({ example: 10, description: 'Minimum price filter' })
   @IsOptional()
   @Type(() => Number)
@@ -87,20 +135,9 @@ export class ListProductsDto {
   @Min(0)
   priceMax?: number;
 
-  // ─── In-stock filter ────────────────────────────────────────
-  @ApiPropertyOptional({
-    example: true,
-    description: 'Only show in-stock products',
-  })
-  @IsOptional()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsBoolean()
-  inStock?: boolean;
-
-  // ─── Sorting ────────────────────────────────────────────────
+  // ─── Sorting ─────────────────────────────────────────────────
   @ApiPropertyOptional({
     example: 'newest',
-    description: 'Sort order',
     enum: [
       'newest',
       'oldest',
@@ -108,10 +145,12 @@ export class ListProductsDto {
       'price_desc',
       'name_asc',
       'name_desc',
+      'popular',
+      'rating',
     ],
+    description: 'Sort order',
   })
   @IsOptional()
-  @IsString()
   @IsIn([
     'newest',
     'oldest',
@@ -119,6 +158,8 @@ export class ListProductsDto {
     'price_desc',
     'name_asc',
     'name_desc',
+    'popular',
+    'rating',
   ])
   sortBy?: string;
 }
