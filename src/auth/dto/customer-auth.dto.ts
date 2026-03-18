@@ -10,6 +10,7 @@ import {
   Matches,
   ValidateNested,
   IsIn,
+  IsPhoneNumber,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
@@ -143,6 +144,11 @@ export class CustomerCompleteRegistrationDto {
   @IsEmail()
   @Transform(({ value }) => value?.toLowerCase().trim())
   email?: string;
+
+  @ApiProperty({ example: '01245647897' })
+  @IsPhoneNumber()
+  // @Transform(({ value }) => value?.toLowerCase().trim())
+  phone!: string;
 
   @ApiProperty({ example: 'SecureP@ss123', minLength: 8 })
   @IsString()

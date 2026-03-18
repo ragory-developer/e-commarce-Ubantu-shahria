@@ -234,8 +234,8 @@ export class CustomerAuthService {
         data: {
           firstName: dto.firstName.trim(),
           lastName: dto.lastName.trim(),
-          ...(isEmail && { email: verifiedValue }),
-          ...(isPhone && { phone: verifiedValue }),
+          phone: dto.phone ?? undefined,
+          email: dto.email ?? undefined,
           password: hashedPassword,
           isGuest: false,
           phoneVerified: isPhone,
@@ -255,7 +255,9 @@ export class CustomerAuthService {
           label: dto.address.label ?? 'Home',
           address: dto.address.address,
           descriptions: dto.address.descriptions ?? '',
-          city: dto.address.city,
+          ...(dto.address.city && {
+            city: { connect: { id: dto.address.city } },
+          }),
           state: dto.address.state,
           road: dto.address.road ?? '',
           zip: dto.address.zip,
