@@ -1,3 +1,4 @@
+// ─── src/admin/dto/update-admin-permissions.dto.ts ──────────
 import { IsEnum, IsArray, IsOptional } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { AdminPermission } from '@prisma/client';
@@ -7,7 +8,7 @@ export class UpdateAdminPermissionsDto {
     enum: AdminPermission,
     isArray: true,
     description: 'Permissions to ADD to existing set',
-    example: ['MANAGE_PRODUCTS', 'VIEW_ORDERS'],
+    example: ['PRODUCT_CREATE', 'ORDER_READ'],
   })
   @IsOptional()
   @IsArray()
@@ -18,7 +19,7 @@ export class UpdateAdminPermissionsDto {
     enum: AdminPermission,
     isArray: true,
     description: 'Permissions to REMOVE from existing set',
-    example: ['MANAGE_PAYMENTS'],
+    example: ['FINANCE_VIEW'],
   })
   @IsOptional()
   @IsArray()
@@ -28,8 +29,9 @@ export class UpdateAdminPermissionsDto {
   @ApiPropertyOptional({
     enum: AdminPermission,
     isArray: true,
-    description: 'REPLACE all permissions with this set (overrides add/remove)',
-    example: ['VIEW_PRODUCTS', 'VIEW_ORDERS', 'VIEW_REPORTS'],
+    description:
+      'REPLACE all permissions with this exact set (overrides add/remove)',
+    example: ['PRODUCT_READ', 'ORDER_READ', 'INVENTORY_VIEW'],
   })
   @IsOptional()
   @IsArray()

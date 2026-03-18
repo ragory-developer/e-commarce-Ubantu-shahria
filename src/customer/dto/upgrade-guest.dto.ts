@@ -1,3 +1,4 @@
+// ─── src/customer/dto/upgrade-guest.dto.ts ──────────────────
 import {
   IsString,
   IsNotEmpty,
@@ -13,7 +14,7 @@ export class UpgradeGuestDto {
   @ApiProperty({
     example: 'SecureP@ss123',
     description:
-      'Password for the new full account (phone must already be verified)',
+      'Password for the new full account. Phone must already be verified via OTP.',
     minLength: 8,
   })
   @IsString()
@@ -21,21 +22,24 @@ export class UpgradeGuestDto {
   @MaxLength(72)
   password!: string;
 
-  @ApiPropertyOptional({ example: 'John' })
+  @ApiPropertyOptional({ example: 'John', description: 'First name' })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   @Transform(({ value }) => value?.trim())
   firstName?: string;
 
-  @ApiPropertyOptional({ example: 'Doe' })
+  @ApiPropertyOptional({ example: 'Doe', description: 'Last name' })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   @Transform(({ value }) => value?.trim())
   lastName?: string;
 
-  @ApiPropertyOptional({ example: 'john@example.com' })
+  @ApiPropertyOptional({
+    example: 'john@example.com',
+    description: 'Optional email address',
+  })
   @IsOptional()
   @IsEmail()
   @Transform(({ value }) => value?.toLowerCase().trim())
