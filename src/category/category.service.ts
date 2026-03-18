@@ -52,19 +52,13 @@ export class CategoryService {
   // ══════════════════════════════════════════════════════════════
   // HELPER: Build materialized path from parent
   // ══════════════════════════════════════════════════════════════
-  private async buildPath(
-    parentId: string | null,
-    newSlug: string,
-  ): Promise<{ path: string; pathIds: string; depth: number }> {
-    if (!parentId) {
-      return { path: newSlug, pathIds: '', depth: 0 };
-    }
+  private async buildPath(parentId: string | null, newSlug: string) {
+    if (!parentId) return { path: newSlug, pathIds: '', depth: 0 };
 
     const parent = await this.prisma.category.findFirst({
       where: { id: parentId, deletedAt: null },
       select: { id: true, slug: true, path: true, pathIds: true, depth: true },
     });
-
     if (!parent)
       throw new NotFoundException({
         message: 'Parent category not found',
@@ -72,20 +66,17 @@ export class CategoryService {
       });
 
     const depth = parent.depth + 1;
-    if (depth > MAX_DEPTH) {
+    if (depth > MAX_DEPTH)
       throw new BadRequestException({
-        message: `Maximum category depth of ${MAX_DEPTH} exceeded`,
-        currentDepth: depth,
-        maxDepth: MAX_DEPTH,
+        message: `Max depth ${MAX_DEPTH} exceeded`,
+        depth,
       });
-    }
 
-    const path = `${parent.path}/${newSlug}`;
-    const pathIds = parent.pathIds
-      ? `${parent.pathIds},${parent.id}`
-      : parent.id;
-
-    return { path, pathIds, depth };
+    return {
+      path: `${parent.path}/${newSlug}`,
+      pathIds: parent.pathIds ? `${parent.pathIds},${parent.id}` : parent.id,
+      depth,
+    };
   }
 
   // ══════════════════════════════════════════════════════════════
@@ -94,11 +85,10 @@ export class CategoryService {
   private async rebuildDescendantPaths(categoryId: string): Promise<void> {
     const category = await this.prisma.category.findUnique({
       where: { id: categoryId },
-      select: { id: true, slug: true, path: true, pathIds: true, depth: true },
+      select: { slug: true, path: true, pathIds: true, depth: true },
     });
     if (!category) return;
 
-    // Find all direct children
     const children = await this.prisma.category.findMany({
       where: { parentId: categoryId, deletedAt: null },
       select: { id: true, slug: true },
@@ -107,16 +97,13 @@ export class CategoryService {
     for (const child of children) {
       const newPath = `${category.path}/${child.slug}`;
       const newPathIds = category.pathIds
-        ? `${category.pathIds},${category.id}`
-        : category.id;
-      const newDepth = category.depth + 1;
+        ? `${category.pathIds},${categoryId}`
+        : categoryId;
 
       await this.prisma.category.update({
         where: { id: child.id },
-        data: { path: newPath, pathIds: newPathIds, depth: newDepth },
+        data: { path: newPath, pathIds: newPathIds, depth: category.depth + 1 },
       });
-
-      // Recurse into child
       await this.rebuildDescendantPaths(child.id);
     }
   }
@@ -204,7 +191,7 @@ export class CategoryService {
   private async loadBreadcrumbs(pathIds: string | null): Promise<any[]> {
     if (!pathIds) return [];
     const ids = pathIds.split(',').filter(Boolean);
-    if (ids.length === 0) return [];
+    if (!ids.length) return [];
 
     const cats = await this.prisma.category.findMany({
       where: { id: { in: ids }, deletedAt: null },
@@ -217,89 +204,135 @@ export class CategoryService {
   // ══════════════════════════════════════════════════════════════
   // HELPER: Recursively load children for tree
   // ══════════════════════════════════════════════════════════════
-  private async loadChildren(
-    category: any,
-    activeOnly: boolean,
-  ): Promise<void> {
-    const children = await this.prisma.category.findMany({
-      where: {
-        parentId: category.id,
-        deletedAt: null,
-        ...(activeOnly && { isActive: true }),
-      },
-      select: CATEGORY_SELECT,
-      orderBy: [{ position: 'asc' }, { name: 'asc' }],
-    });
+  // private async loadChildren(
+  //   category: any,
+  //   activeOnly: boolean,
+  // ): Promise<void> {
+  //   const children = await this.prisma.category.findMany({
+  //     where: {
+  //       parentId: category.id,
+  //       deletedAt: null,
+  //       ...(activeOnly && { isActive: true }),
+  //     },
+  //     select: CATEGORY_SELECT,
+  //     orderBy: [{ position: 'asc' }, { name: 'asc' }],
+  //   });
 
-    category.children = children;
-    for (const child of children) {
-      await this.loadChildren(child, activeOnly);
-    }
-  }
+  //   category.children = children;
+  //   for (const child of children) {
+  //     await this.loadChildren(child, activeOnly);
+  //   }
+  // }
 
   // ══════════════════════════════════════════════════════════════
   // CREATE CATEGORY
   // ══════════════════════════════════════════════════════════════
+  // async create(dto: CreateCategoryDto, createdBy: string) {
+  //   // Slug uniqueness
+  //   const existingSlug = await this.prisma.category.findFirst({
+  //     where: { slug: dto.slug, deletedAt: null },
+  //     select: { id: true },
+  //   });
+
+  //   if (existingSlug) {
+  //     throw new ConflictException({
+  //       message: 'Category with this slug already exists',
+  //       field: 'slug',
+  //       conflictingId: existingSlug.id,
+  //     });
+  //   }
+
+  //   // Verify media
+  //   if (dto.image) await this.verifyMedia(dto.image, 'image');
+  //   if (dto.icon) await this.verifyMedia(dto.icon, 'icon');
+  //   if (dto.bannerImage) await this.verifyMedia(dto.bannerImage, 'bannerImage');
+
+  //   // Build path
+  //   const { path, pathIds, depth } = await this.buildPath(
+  //     dto.parentId || null,
+  //     dto.slug,
+  //   );
+
+  //   const category = await this.prisma.$transaction(async (tx) => {
+  //     const cat = await tx.category.create({
+  //       data: {
+  //         name: dto.name,
+  //         slug: dto.slug,
+  //         description: dto.description ?? null,
+  //         parentId: dto.parentId || null,
+  //         image: dto.image || null,
+  //         icon: dto.icon || null,
+  //         bannerImage: dto.bannerImage || null,
+  //         path,
+  //         pathIds,
+  //         depth,
+  //         position: dto.position ?? 0,
+  //         isActive: dto.isActive ?? true,
+  //         translations: dto.translations
+  //           ? (dto.translations as Prisma.InputJsonValue)
+  //           : Prisma.JsonNull,
+  //         seo: dto.seo ? (dto.seo as Prisma.InputJsonValue) : Prisma.JsonNull,
+  //         createdBy,
+  //       },
+  //     });
+
+  //     if (dto.image)
+  //       await this.linkMedia(tx, cat.id, dto.image, 'thumbnail', true);
+  //     if (dto.icon) await this.linkMedia(tx, cat.id, dto.icon, 'icon');
+  //     if (dto.bannerImage)
+  //       await this.linkMedia(tx, cat.id, dto.bannerImage, 'banner');
+
+  //     return cat;
+  //   });
+
+  //   this.logger.log(
+  //     `Category created: "${category.name}" (${category.slug}) depth=${depth} by ${createdBy}`,
+  //   );
+  //   return this.findOne(category.id);
+  // }
+
   async create(dto: CreateCategoryDto, createdBy: string) {
-    // Slug uniqueness
     const existingSlug = await this.prisma.category.findFirst({
       where: { slug: dto.slug, deletedAt: null },
       select: { id: true },
     });
-
     if (existingSlug) {
       throw new ConflictException({
-        message: 'Category with this slug already exists',
+        message: 'Slug already exists',
         field: 'slug',
         conflictingId: existingSlug.id,
       });
     }
 
-    // Verify media
-    if (dto.image) await this.verifyMedia(dto.image, 'image');
-    if (dto.icon) await this.verifyMedia(dto.icon, 'icon');
-    if (dto.bannerImage) await this.verifyMedia(dto.bannerImage, 'bannerImage');
-
-    // Build path
     const { path, pathIds, depth } = await this.buildPath(
       dto.parentId || null,
       dto.slug,
     );
 
-    const category = await this.prisma.$transaction(async (tx) => {
-      const cat = await tx.category.create({
-        data: {
-          name: dto.name,
-          slug: dto.slug,
-          description: dto.description ?? null,
-          parentId: dto.parentId || null,
-          image: dto.image || null,
-          icon: dto.icon || null,
-          bannerImage: dto.bannerImage || null,
-          path,
-          pathIds,
-          depth,
-          position: dto.position ?? 0,
-          isActive: dto.isActive ?? true,
-          translations: dto.translations
-            ? (dto.translations as Prisma.InputJsonValue)
-            : Prisma.JsonNull,
-          seo: dto.seo ? (dto.seo as Prisma.InputJsonValue) : Prisma.JsonNull,
-          createdBy,
-        },
-      });
-
-      if (dto.image)
-        await this.linkMedia(tx, cat.id, dto.image, 'thumbnail', true);
-      if (dto.icon) await this.linkMedia(tx, cat.id, dto.icon, 'icon');
-      if (dto.bannerImage)
-        await this.linkMedia(tx, cat.id, dto.bannerImage, 'banner');
-
-      return cat;
+    const category = await this.prisma.category.create({
+      data: {
+        name: dto.name,
+        slug: dto.slug,
+        description: dto.description ?? null,
+        parentId: dto.parentId || null,
+        image: dto.image || null,
+        icon: dto.icon || null,
+        bannerImage: dto.bannerImage || null,
+        path,
+        pathIds,
+        depth,
+        position: dto.position ?? 0,
+        isActive: dto.isActive ?? true,
+        translations: dto.translations
+          ? (dto.translations as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+        seo: dto.seo ? (dto.seo as Prisma.InputJsonValue) : Prisma.JsonNull,
+        createdBy,
+      },
     });
 
     this.logger.log(
-      `Category created: "${category.name}" (${category.slug}) depth=${depth} by ${createdBy}`,
+      `Category created: "${category.slug}" depth=${depth} by ${createdBy}`,
     );
     return this.findOne(category.id);
   }
@@ -307,6 +340,62 @@ export class CategoryService {
   // ══════════════════════════════════════════════════════════════
   // GET ALL CATEGORIES (flat list)
   // ══════════════════════════════════════════════════════════════
+  // async findAll(dto: ListCategoriesDto) {
+  //   const where: Prisma.CategoryWhereInput = {
+  //     deletedAt: null,
+  //     ...(dto.search && {
+  //       OR: [
+  //         { name: { contains: dto.search, mode: 'insensitive' } },
+  //         { slug: { contains: dto.search, mode: 'insensitive' } },
+  //       ],
+  //     }),
+  //     ...(dto.parentId
+  //       ? { parentId: dto.parentId }
+  //       : dto.rootOnly
+  //         ? { parentId: null }
+  //         : {}),
+  //     ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+  //   };
+
+  //   const sortField = dto.sortBy ?? 'position';
+  //   const sortDir = dto.sortOrder ?? 'asc';
+
+  //   const orderByMap: Record<string, Prisma.CategoryOrderByWithRelationInput> =
+  //     {
+  //       name: { name: sortDir },
+  //       slug: { slug: sortDir },
+  //       position: { position: sortDir },
+  //       createdAt: { createdAt: sortDir },
+  //       depth: { depth: sortDir },
+  //     };
+  //   const orderBy = orderByMap[sortField] ?? { position: 'asc' };
+
+  //   const [data, total] = await Promise.all([
+  //     this.prisma.category.findMany({
+  //       where,
+  //       select: {
+  //         ...CATEGORY_SELECT,
+  //         parent: { select: { id: true, name: true, slug: true } },
+  //       },
+  //       orderBy,
+  //       skip: dto.skip,
+  //       take: dto.take,
+  //     }),
+  //     this.prisma.category.count({ where }),
+  //   ]);
+
+  //   return {
+  //     data,
+  //     total,
+  //     meta: {
+  //       skip: dto.skip,
+  //       take: dto.take,
+  //       page: Math.floor(dto.skip / dto.take) + 1,
+  //       pageCount: Math.ceil(total / dto.take) || 1,
+  //       hasMore: dto.skip + dto.take < total,
+  //     },
+  //   };
+  // }
   async findAll(dto: ListCategoriesDto) {
     const where: Prisma.CategoryWhereInput = {
       deletedAt: null,
@@ -326,16 +415,13 @@ export class CategoryService {
 
     const sortField = dto.sortBy ?? 'position';
     const sortDir = dto.sortOrder ?? 'asc';
-
-    const orderByMap: Record<string, Prisma.CategoryOrderByWithRelationInput> =
-      {
-        name: { name: sortDir },
-        slug: { slug: sortDir },
-        position: { position: sortDir },
-        createdAt: { createdAt: sortDir },
-        depth: { depth: sortDir },
-      };
-    const orderBy = orderByMap[sortField] ?? { position: 'asc' };
+    const orderByMap: Record<string, any> = {
+      name: { name: sortDir },
+      slug: { slug: sortDir },
+      position: { position: sortDir },
+      createdAt: { createdAt: sortDir },
+      depth: { depth: sortDir },
+    };
 
     const [data, total] = await Promise.all([
       this.prisma.category.findMany({
@@ -344,7 +430,7 @@ export class CategoryService {
           ...CATEGORY_SELECT,
           parent: { select: { id: true, name: true, slug: true } },
         },
-        orderBy,
+        orderBy: orderByMap[sortField] ?? { position: 'asc' },
         skip: dto.skip,
         take: dto.take,
       }),
@@ -367,27 +453,167 @@ export class CategoryService {
   // ══════════════════════════════════════════════════════════════
   // GET FULL TREE
   // ══════════════════════════════════════════════════════════════
-  async getTree(activeOnly: boolean = false) {
-    const roots = await this.prisma.category.findMany({
-      where: {
-        parentId: null,
-        deletedAt: null,
-        ...(activeOnly && { isActive: true }),
-      },
-      select: CATEGORY_SELECT,
-      orderBy: [{ position: 'asc' }, { name: 'asc' }],
-    });
+  // async getTree(activeOnly: boolean = false) {
+  //   const roots = await this.prisma.category.findMany({
+  //     where: {
+  //       parentId: null,
+  //       deletedAt: null,
+  //       ...(activeOnly && { isActive: true }),
+  //     },
+  //     select: CATEGORY_SELECT,
+  //     orderBy: [{ position: 'asc' }, { name: 'asc' }],
+  //   });
 
-    for (const root of roots) {
-      await this.loadChildren(root as any, activeOnly);
-    }
+  //   for (const root of roots) {
+  //     await this.loadChildren(root as any, activeOnly);
+  //   }
 
-    return roots;
+  //   return roots;
+  // }
+  async getTree(activeOnly = false) {
+    // Single recursive SQL query — replaces N recursive JS calls
+    const flat = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        name: string;
+        slug: string;
+        description: string | null;
+        image: string | null;
+        icon: string | null;
+        banner_image: string | null;
+        parent_id: string | null;
+        depth: number;
+        position: number;
+        is_active: boolean;
+        path: string | null;
+        path_ids: string | null;
+        translations: any;
+        seo: any;
+        created_at: Date;
+        updated_at: Date;
+      }>
+    >`
+      WITH RECURSIVE category_tree AS (
+        -- Root categories
+        SELECT
+          id, name, slug, description, image, icon, banner_image,
+          parent_id, depth, position, is_active, path, path_ids,
+          translations, seo, created_at, updated_at
+        FROM categories
+        WHERE parent_id IS NULL
+          AND deleted_at IS NULL
+          ${activeOnly ? Prisma.sql`AND is_active = true` : Prisma.empty}
+
+        UNION ALL
+
+        -- Child categories
+        SELECT
+          c.id, c.name, c.slug, c.description, c.image, c.icon, c.banner_image,
+          c.parent_id, c.depth, c.position, c.is_active, c.path, c.path_ids,
+          c.translations, c.seo, c.created_at, c.updated_at
+        FROM categories c
+        INNER JOIN category_tree ct ON c.parent_id = ct.id
+        WHERE c.deleted_at IS NULL
+          ${activeOnly ? Prisma.sql`AND c.is_active = true` : Prisma.empty}
+      )
+      SELECT * FROM category_tree
+      ORDER BY depth ASC, position ASC, name ASC
+    `;
+
+    // Map snake_case SQL → camelCase + build nested tree in memory
+    const nodes = flat.map((r) => ({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      description: r.description,
+      image: r.image,
+      icon: r.icon,
+      bannerImage: r.banner_image,
+      parentId: r.parent_id,
+      depth: r.depth,
+      position: r.position,
+      isActive: r.is_active,
+      path: r.path,
+      pathIds: r.path_ids,
+      translations: r.translations,
+      seo: r.seo,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      children: [] as any[],
+    }));
+
+    return this.buildTree(nodes, null);
+  }
+
+  // Build tree from flat list in O(n) — much faster than recursive DB calls
+  private buildTree(nodes: any[], parentId: string | null): any[] {
+    return nodes
+      .filter((n) => n.parentId === parentId)
+      .map((n) => ({
+        ...n,
+        children: this.buildTree(nodes, n.id),
+      }));
   }
 
   // ══════════════════════════════════════════════════════════════
   // GET CATEGORY BY ID
   // ══════════════════════════════════════════════════════════════
+  // async findOne(id: string) {
+  //   const category = await this.prisma.category.findFirst({
+  //     where: { id, deletedAt: null },
+  //     select: {
+  //       ...CATEGORY_SELECT,
+  //       createdBy: true,
+  //       updatedBy: true,
+  //       parent: { select: { id: true, name: true, slug: true } },
+  //       children: {
+  //         where: { deletedAt: null },
+  //         select: {
+  //           id: true,
+  //           name: true,
+  //           slug: true,
+  //           image: true,
+  //           icon: true,
+  //           position: true,
+  //           isActive: true,
+  //           depth: true,
+  //           _count: { select: { children: true, products: true } },
+  //         },
+  //         orderBy: { position: 'asc' },
+  //       },
+  //     },
+  //   });
+
+  //   if (!category) {
+  //     throw new NotFoundException({
+  //       message: 'Category not found',
+  //       resourceId: id,
+  //       resource: 'Category',
+  //     });
+  //   }
+
+  //   const [breadcrumbs, media] = await Promise.all([
+  //     this.loadBreadcrumbs(category.pathIds),
+  //     this.prisma.entityMedia.findMany({
+  //       where: { entityType: 'Category', entityId: id },
+  //       include: {
+  //         media: {
+  //           select: {
+  //             id: true,
+  //             storageUrl: true,
+  //             variants: true,
+  //             alt: true,
+  //             mimeType: true,
+  //           },
+  //         },
+  //       },
+  //       orderBy: [{ isMain: 'desc' }, { position: 'asc' }],
+  //     }),
+  //   ]);
+
+  //   return { ...category, breadcrumbs, media };
+  // }
+
   async findOne(id: string) {
     const category = await this.prisma.category.findFirst({
       where: { id, deletedAt: null },
@@ -413,14 +639,11 @@ export class CategoryService {
         },
       },
     });
-
-    if (!category) {
+    if (!category)
       throw new NotFoundException({
         message: 'Category not found',
         resourceId: id,
-        resource: 'Category',
       });
-    }
 
     const [breadcrumbs, media] = await Promise.all([
       this.loadBreadcrumbs(category.pathIds),

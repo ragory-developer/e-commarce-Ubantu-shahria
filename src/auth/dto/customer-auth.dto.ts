@@ -64,7 +64,7 @@ export class CustomerVerifyRegistrationOtpDto {
   code!: string;
 }
 
-// ─── Optional address during registration ─────────────────────
+// ─── Optional address during registration (matches Address schema) ─────────────────────
 export class RegisterAddressDto {
   @ApiPropertyOptional({ example: 'Home' })
   @IsOptional()
@@ -72,47 +72,58 @@ export class RegisterAddressDto {
   @MaxLength(50)
   label?: string;
 
-  @ApiProperty({ example: '123 Main St' })
+  @ApiProperty({ example: 'John Doe' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(191)
-  address!: string;
+  fullName!: string;
 
-  @ApiPropertyOptional({ example: 'Near the park' })
-  @IsOptional()
-  @IsString()
-  descriptions?: string;
-
-  @ApiProperty({ example: 'Dhaka' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(191)
-  city!: string;
-
-  @ApiProperty({ example: 'Dhaka Division' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(191)
-  state!: string;
-
-  @ApiPropertyOptional({ example: 'Road 5' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(191)
-  road?: string;
-
-  @ApiProperty({ example: '1207' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(20)
-  zip!: string;
-
-  @ApiProperty({ example: 'BD' })
+  @ApiProperty({ example: '01712345678' })
   @IsString()
   @IsNotEmpty()
   @MaxLength(50)
-  @Transform(({ value }) => value?.trim().toUpperCase())
-  country!: string;
+  phone!: string;
+
+  @ApiProperty({ example: 'House 123, Road 5, Block B, Bashundhara R/A' })
+  @IsString()
+  @IsNotEmpty()
+  addressLine!: string;
+
+  @ApiProperty({
+    example: 'clx1234567890',
+    description: 'Division ID (get from /locations/divisions)',
+  })
+  @IsString()
+  @IsNotEmpty()
+  divisionId!: string;
+
+  @ApiProperty({
+    example: 'clx9876543210',
+    description: 'City ID (get from /locations/divisions/:id/cities)',
+  })
+  @IsString()
+  @IsNotEmpty()
+  cityId!: string;
+
+  @ApiProperty({
+    example: 'clx5555555555',
+    description: 'Area ID (get from /locations/cities/:id/areas)',
+  })
+  @IsString()
+  @IsNotEmpty()
+  areaId!: string;
+
+  @ApiProperty({ example: '1229' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(10)
+  postalCode!: string;
+
+  @ApiPropertyOptional({ example: 'BD', default: 'BD' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  country?: string;
 }
 
 // ─── Step 3: Complete Registration ───────────────────────────
@@ -145,9 +156,13 @@ export class CustomerCompleteRegistrationDto {
   @Transform(({ value }) => value?.toLowerCase().trim())
   email?: string;
 
-  @ApiProperty({ example: '01245647897' })
-  @IsPhoneNumber()
-  // @Transform(({ value }) => value?.toLowerCase().trim())
+  @ApiProperty({
+    example: '01712345678',
+    description: 'Phone number (required - primary identifier in the system)',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
   phone!: string;
 
   @ApiProperty({ example: 'SecureP@ss123', minLength: 8 })

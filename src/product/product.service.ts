@@ -310,28 +310,80 @@ export class ProductService {
   }
 
   // ─── Attach media from EntityMedia table ─────────────────────
-  private async attachMedia(product: any): Promise<any> {
-    const [media, entityMediaLinks] = await Promise.all([
-      this.prisma.entityMedia.findMany({
-        where: { entityType: 'Product', entityId: product.id },
-        include: MEDIA_INCLUDE,
-        orderBy: [{ isMain: 'desc' }, { position: 'asc' }],
-      }),
-      Promise.resolve([]),
-    ]);
+  // private async attachMedia(product: any): Promise<any> {
+  //   const [media, entityMediaLinks] = await Promise.all([
+  //     this.prisma.entityMedia.findMany({
+  //       where: { entityType: 'Product', entityId: product.id },
+  //       include: MEDIA_INCLUDE,
+  //       orderBy: [{ isMain: 'desc' }, { position: 'asc' }],
+  //     }),
+  //     Promise.resolve([]),
+  //   ]);
 
-    const variantsWithMedia = await Promise.all(
-      (product.variants || []).map(async (variant: any) => {
-        const variantMedia = await this.prisma.entityMedia.findMany({
-          where: { entityType: 'ProductVariant', entityId: variant.id },
-          include: MEDIA_INCLUDE,
-          orderBy: [{ isMain: 'desc' }, { position: 'asc' }],
-        });
-        return { ...variant, media: variantMedia };
-      }),
+  //   const variantsWithMedia = await Promise.all(
+  //     (product.variants || []).map(async (variant: any) => {
+  //       const variantMedia = await this.prisma.entityMedia.findMany({
+  //         where: { entityType: 'ProductVariant', entityId: variant.id },
+  //         include: MEDIA_INCLUDE,
+  //         orderBy: [{ isMain: 'desc' }, { position: 'asc' }],
+  //       });
+  //       return { ...variant, media: variantMedia };
+  //     }),
+  //   );
+
+  //   return { ...product, media, variants: variantsWithMedia };
+  // }
+  private async attachMedia(product: any): Promise<any> {
+    // Collect all entity IDs we need media for
+    const variantIds: string[] = (product.variants || []).map((v: any) => v.id);
+    const allEntityIds = [product.id, ...variantIds];
+
+    // ── SINGLE QUERY for all media (product + all variants) ──────
+    const allMedia = await this.prisma.entityMedia.findMany({
+      where: {
+        entityId: { in: allEntityIds },
+        entityType: { in: ['Product', 'ProductVariant'] },
+      },
+      include: {
+        media: {
+          select: {
+            id: true,
+            storageUrl: true,
+            variants: true,
+            alt: true,
+            mimeType: true,
+            width: true,
+            height: true,
+            originalName: true,
+          },
+        },
+      },
+      orderBy: [{ isMain: 'desc' }, { position: 'asc' }],
+    });
+
+    // Split into product media vs variant media (group by entityId)
+    const productMedia = allMedia.filter(
+      (m) => m.entityType === 'Product' && m.entityId === product.id,
     );
 
-    return { ...product, media, variants: variantsWithMedia };
+    const variantMediaMap = new Map<string, typeof allMedia>();
+    for (const m of allMedia.filter((m) => m.entityType === 'ProductVariant')) {
+      const list = variantMediaMap.get(m.entityId) ?? [];
+      list.push(m);
+      variantMediaMap.set(m.entityId, list);
+    }
+
+    // Attach media to each variant
+    const variantsWithMedia = (product.variants || []).map((variant: any) => ({
+      ...variant,
+      media: variantMediaMap.get(variant.id) ?? [],
+    }));
+
+    return {
+      ...product,
+      media: productMedia,
+      variants: variantsWithMedia,
+    };
   }
 
   // ─── Recompute product price range from variants ──────────────

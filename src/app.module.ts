@@ -56,6 +56,17 @@ import { ShippingModule } from './shipping/shipping.module';
 import { PromotionService } from './promotion/promotion.service';
 import { PromotionController } from './promotion/promotion.controller';
 import { PromotionModule } from './promotion/promotion.module';
+import { CourierModule } from './courier/courier.module';
+// import { ScheckoutService } from './scheckout/scheckout.service';
+// import { CheckoutService } from './checkout/checkout.service';
+// import { CheckoutController } from './checkout/checkout.controller';
+// import { CheckoutModule } from './checkout/checkout.module';
+import { AdminReturnsService } from './admin-return/admin-return.service';
+import { AdminReturnsController } from './admin-return/admin-return.controller';
+import { AdminReturnsModule } from './admin-return/admin-return.module';
+// import { AdminWalletService } from './admin-wallet/admin-wallet.service';
+// import { AdminWalletController } from './admin-wallet/admin-wallet.controller';
+// import { AdminWalletModule } from './admin-wallet/admin-wallet.module';
 
 @Module({
   imports: [
@@ -98,9 +109,30 @@ import { PromotionModule } from './promotion/promotion.module';
     DeliveryZoneModule,
     ShippingModule,
     PromotionModule,
+    CourierModule,
+    // CheckoutModule,
+    AdminReturnsModule,
+    // AdminWalletModule,
   ],
 
-  controllers: [AppController, MediaController, BrandController, AttributeSetController, AttributeController, FlashSaleController, CouponController, ProductController, TaxController, DeliveryZoneController, ShippingController, PromotionController],
+  controllers: [
+    AppController,
+    MediaController,
+    BrandController,
+    AttributeSetController,
+    AttributeController,
+    FlashSaleController,
+    CouponController,
+    ProductController,
+    TaxController,
+    DeliveryZoneController,
+    ShippingController,
+    PromotionController,
+    // CheckoutController,
+    // AdminReturnController,
+    AdminReturnsController,
+    // AdminWalletController,
+  ],
 
   providers: [
     AppService,
@@ -126,6 +158,11 @@ import { PromotionModule } from './promotion/promotion.module';
     DeliveryZoneService,
     ShippingService,
     PromotionService,
+    // ScheckoutService,
+    // CheckoutService,
+    // AdminReturnService,
+    AdminReturnsService,
+    // AdminWalletService,
   ],
 })
 export class AppModule {}

@@ -218,7 +218,7 @@ export class CustomerAuthService {
           firstName: dto.firstName.trim(),
           lastName: dto.lastName.trim(),
           email: isEmail ? verifiedValue : (dto.email?.toLowerCase() ?? null),
-          phone: isPhone ? verifiedValue : undefined,
+          phone: isPhone ? verifiedValue : dto.phone,
           password: hashedPassword,
           isGuest: false,
           phoneVerified: isPhone,
@@ -234,8 +234,8 @@ export class CustomerAuthService {
         data: {
           firstName: dto.firstName.trim(),
           lastName: dto.lastName.trim(),
-          phone: dto.phone ?? undefined,
-          email: dto.email ?? undefined,
+          phone: isPhone ? verifiedValue : dto.phone,
+          email: isEmail ? verifiedValue : (dto.email?.toLowerCase() ?? null),
           password: hashedPassword,
           isGuest: false,
           phoneVerified: isPhone,
@@ -247,25 +247,55 @@ export class CustomerAuthService {
       customerId = created.id;
     }
 
-    // Save optional address
+    // Save optional address using proper Address schema fields
     if (dto.address) {
+      // Validate location hierarchy exists
+      const areaExists = await this.prisma.area.findFirst({
+        where: {
+          id: dto.address.areaId,
+          cityId: dto.address.cityId,
+          isActive: true,
+        },
+        include: {
+          city: {
+            select: {
+              id: true,
+              divisionId: true,
+            },
+          },
+        },
+      });
+
+      if (!areaExists) {
+        throw new BadRequestException(
+          'Invalid area or area does not belong to the selected city',
+        );
+      }
+
+      if (areaExists.city.divisionId !== dto.address.divisionId) {
+        throw new BadRequestException(
+          'Invalid location hierarchy: city does not belong to the selected division',
+        );
+      }
+
+      // Count existing addresses to determine if this should be default
+      const hasAny = await this.prisma.address.count({
+        where: { customerId, deletedAt: null },
+      });
+
       await this.prisma.address.create({
         data: {
           customerId,
           label: dto.address.label ?? 'Home',
-          address: dto.address.address,
-          descriptions: dto.address.descriptions ?? '',
-          ...(dto.address.city && {
-            city: { connect: { id: dto.address.city } },
-          }),
-          ...(dto.address.state && {
-            state: { connect: { id: dto.address.state } },
-          }),
-          road: dto.address.road ?? '',
-          zip: dto.address.zip,
-          country: dto.address.country,
-          isDefault: true,
-          createdBy: customerId,
+          fullName: dto.address.fullName,
+          phone: dto.address.phone,
+          addressLine: dto.address.addressLine,
+          divisionId: dto.address.divisionId,
+          cityId: dto.address.cityId,
+          areaId: dto.address.areaId,
+          postalCode: dto.address.postalCode,
+          country: dto.address.country ?? 'BD',
+          isDefault: hasAny === 0,
         },
       });
     }
