@@ -1,15 +1,9 @@
-/**
- * src/otp/otp.types.ts
- *
- * TypeScript types and interfaces for the OTP system.
- */
+// src/otp/otp.types.ts
 
 import { OtpChannel, OtpPurpose } from '@prisma/client';
 
-// ─── Request/Response Types ──────────────────────────────────
-
 export interface SendOtpOptions {
-  target: string; // Phone number or email
+  target: string;
   purpose: OtpPurpose;
   recipientName?: string;
   ipAddress?: string;
@@ -20,7 +14,7 @@ export interface VerifyOtpOptions {
   target: string;
   purpose: OtpPurpose;
   code: string;
-  consume?: boolean; // Mark as verified after successful verification
+  consume?: boolean;
 }
 
 export interface SendOtpResult {
@@ -36,9 +30,8 @@ export interface VerifyOtpResult {
   success: boolean;
   message?: string;
   verified?: boolean;
+  attemptsRemaining?: number; // Added - was missing
 }
-
-// ─── Internal Types ──────────────────────────────────────────
 
 export interface OtpRecord {
   id: string;

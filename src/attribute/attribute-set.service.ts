@@ -1,4 +1,4 @@
-// ─── src/attribute/attribute-set.service.ts ──────────────────
+// src/attribute/attribute-set.service.ts
 
 import {
   Injectable,
@@ -21,15 +21,11 @@ export class AttributeSetService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // ══════════════════════════════════════════════════════════════
-  // CREATE ATTRIBUTE SET
-  // ══════════════════════════════════════════════════════════════
   async create(dto: CreateAttributeSetDto, createdBy: string) {
     const existingSlug = await this.prisma.attributeSet.findFirst({
       where: { slug: dto.slug, deletedAt: null },
       select: { id: true },
     });
-
     if (existingSlug) {
       throw new ConflictException({
         message: 'Attribute set with this slug already exists',
@@ -45,7 +41,6 @@ export class AttributeSetService {
       },
       select: { id: true },
     });
-
     if (existingName) {
       throw new ConflictException({
         message: 'Attribute set with this name already exists',
@@ -79,9 +74,6 @@ export class AttributeSetService {
     return attributeSet;
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // LIST ATTRIBUTE SETS
-  // ══════════════════════════════════════════════════════════════
   async findAll(dto: ListAttributeSetsDto) {
     const where: Prisma.AttributeSetWhereInput = {
       deletedAt: null,
@@ -125,9 +117,6 @@ export class AttributeSetService {
     };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // GET BY ID
-  // ══════════════════════════════════════════════════════════════
   async findOne(id: string) {
     const attributeSet = await this.prisma.attributeSet.findFirst({
       where: { id, deletedAt: null },
@@ -139,7 +128,6 @@ export class AttributeSetService {
             name: true,
             slug: true,
             type: true,
-            position: true,
             translations: true,
             createdAt: true,
             _count: { select: { values: true, productAttributes: true } },
@@ -150,13 +138,11 @@ export class AttributeSetService {
                 value: true,
                 label: true,
                 hexColor: true,
-                position: true,
                 translations: true,
               },
-              orderBy: { position: 'asc' },
+              // No position - not in schema
             },
           },
-          orderBy: { position: 'asc' },
         },
       },
     });
@@ -167,13 +153,9 @@ export class AttributeSetService {
         resourceId: id,
       });
     }
-
     return attributeSet;
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // GET BY SLUG
-  // ══════════════════════════════════════════════════════════════
   async findBySlug(slug: string) {
     const attributeSet = await this.prisma.attributeSet.findFirst({
       where: { slug, deletedAt: null },
@@ -185,7 +167,6 @@ export class AttributeSetService {
             name: true,
             slug: true,
             type: true,
-            position: true,
             translations: true,
             values: {
               where: { deletedAt: null },
@@ -194,13 +175,10 @@ export class AttributeSetService {
                 value: true,
                 label: true,
                 hexColor: true,
-                position: true,
                 translations: true,
               },
-              orderBy: { position: 'asc' },
             },
           },
-          orderBy: { position: 'asc' },
         },
       },
     });
@@ -211,13 +189,9 @@ export class AttributeSetService {
         resourceSlug: slug,
       });
     }
-
     return attributeSet;
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // UPDATE
-  // ══════════════════════════════════════════════════════════════
   async update(id: string, dto: UpdateAttributeSetDto, updatedBy: string) {
     const existing = await this.prisma.attributeSet.findFirst({
       where: { id, deletedAt: null },
@@ -240,7 +214,6 @@ export class AttributeSetService {
         throw new ConflictException({
           message: 'Slug already taken',
           field: 'slug',
-          conflictingId: slugExists.id,
         });
       }
     }
@@ -258,12 +231,11 @@ export class AttributeSetService {
         throw new ConflictException({
           message: 'Name already taken',
           field: 'name',
-          conflictingId: nameExists.id,
         });
       }
     }
 
-    const updated = await this.prisma.attributeSet.update({
+    await this.prisma.attributeSet.update({
       where: { id },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -274,13 +246,10 @@ export class AttributeSetService {
       },
     });
 
-    this.logger.log(`AttributeSet updated: "${updated.name}" by ${updatedBy}`);
+    this.logger.log(`AttributeSet updated by ${updatedBy}`);
     return this.findOne(id);
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // DELETE
-  // ══════════════════════════════════════════════════════════════
   async remove(id: string, deletedBy: string): Promise<void> {
     const existing = await this.prisma.attributeSet.findFirst({
       where: { id, deletedAt: null },
@@ -300,12 +269,10 @@ export class AttributeSetService {
 
     if (attributeCount > 0) {
       throw new BadRequestException({
-        message: `Cannot delete attribute set "${existing.name}". It contains ${attributeCount} attribute(s). Delete all attributes first.`,
-        attributeCount,
+        message: `Cannot delete attribute set "${existing.name}". It has ${attributeCount} attribute(s).`,
       });
     }
 
     await this.prisma.softDelete('attributeSet', id, deletedBy);
-    this.logger.log(`AttributeSet deleted: "${existing.name}" by ${deletedBy}`);
   }
 }

@@ -1,3 +1,4 @@
+// src/flash-sale/dto/list-flash-sales.dto.ts
 import {
   IsOptional,
   IsInt,
@@ -5,9 +6,11 @@ import {
   Max,
   IsString,
   IsBoolean,
+  IsEnum,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
+import { FlashSaleStatus } from '@prisma/client';
 
 export class ListFlashSalesDto {
   @ApiPropertyOptional({ example: 0, default: 0 })
@@ -29,6 +32,14 @@ export class ListFlashSalesDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @ApiPropertyOptional({
+    enum: FlashSaleStatus,
+    description: 'Filter by status',
+  })
+  @IsOptional()
+  @IsEnum(FlashSaleStatus)
+  status?: FlashSaleStatus;
 
   @ApiPropertyOptional({
     example: true,

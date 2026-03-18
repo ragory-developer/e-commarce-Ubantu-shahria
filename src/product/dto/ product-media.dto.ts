@@ -1,4 +1,4 @@
-// ─── src/product/dto/product-media.dto.ts ─────────────────────
+// src/product/dto/product-media.dto.ts
 
 import {
   IsString,

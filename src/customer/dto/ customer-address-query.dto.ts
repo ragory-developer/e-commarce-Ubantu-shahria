@@ -1,4 +1,4 @@
-// ─── src/customer/dto/customer-address-query.dto.ts ─────────
+// src/customer/dto/customer-address-query.dto.ts
 import { IsOptional, IsBoolean } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';

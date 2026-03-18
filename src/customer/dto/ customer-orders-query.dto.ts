@@ -1,8 +1,8 @@
-// ─── src/customer/dto/customer-orders-query.dto.ts ──────────
+// src/customer/dto/customer-orders-query.dto.ts
 import { IsOptional, IsInt, IsEnum, Min, Max, IsIn } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { OrderStatus } from '@prisma/client';
 
 export class CustomerOrdersQueryDto {
   @ApiPropertyOptional({ example: 1, default: 1 })

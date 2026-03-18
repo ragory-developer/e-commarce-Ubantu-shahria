@@ -1,4 +1,4 @@
-// ─── src/attribute/dto/index.ts ───────────────────────────────
+// src/attribute/dto/index.ts
 
 import {
   IsString,
@@ -110,19 +110,12 @@ export class CreateAttributeDto {
   @ApiPropertyOptional({
     enum: AttributeType,
     default: 'TEXT',
-    description:
-      'TEXT | NUMBER | SELECT | MULTI_SELECT | COLOR_PICKER | CHECKBOX | DATE_PICKER',
   })
   @IsOptional()
   @IsEnum(AttributeType)
   type?: AttributeType = AttributeType.TEXT;
 
-  @ApiPropertyOptional({ example: 0 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  position?: number;
+  // Note: Attribute has no position field in schema
 
   @ApiPropertyOptional({
     type: Object,
@@ -133,24 +126,30 @@ export class CreateAttributeDto {
   translations?: Record<string, any>;
 }
 
-export class UpdateAttributeDto extends PartialType(
-  // Omit attributeSetId from update (cannot move attribute to different set)
-  class {
-    @IsOptional()
-    @IsString()
-    @MaxLength(191)
-    @Transform(({ value }) => value?.trim())
-    name?: string;
-    @IsOptional()
-    @IsString()
-    @MaxLength(191)
-    @Transform(({ value }) => value?.trim().toLowerCase())
-    slug?: string;
-    @IsOptional() @IsEnum(AttributeType) type?: AttributeType;
-    @IsOptional() @Type(() => Number) @IsInt() @Min(0) position?: number;
-    @IsOptional() @IsObject() translations?: Record<string, any>;
-  },
-) {}
+// Using a plain class approach to avoid decorator-in-class-expression issues
+export class UpdateAttributeDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  @Transform(({ value }) => value?.trim())
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(191)
+  @Transform(({ value }) => value?.trim().toLowerCase())
+  slug?: string;
+
+  @IsOptional()
+  @IsEnum(AttributeType)
+  type?: AttributeType;
+
+  // No position in Attribute schema
+
+  @IsOptional()
+  @IsObject()
+  translations?: Record<string, any>;
+}
 
 export class ListAttributesDto {
   @ApiPropertyOptional({ example: 0, default: 0 })
@@ -173,10 +172,7 @@ export class ListAttributesDto {
   @IsString()
   attributeSetId?: string;
 
-  @ApiPropertyOptional({
-    enum: AttributeType,
-    description: 'Filter by attribute type',
-  })
+  @ApiPropertyOptional({ enum: AttributeType })
   @IsOptional()
   @IsEnum(AttributeType)
   type?: AttributeType;
@@ -186,10 +182,10 @@ export class ListAttributesDto {
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ enum: ['name', 'slug', 'position', 'createdAt'] })
+  @ApiPropertyOptional({ enum: ['name', 'slug', 'createdAt'] })
   @IsOptional()
-  @IsIn(['name', 'slug', 'position', 'createdAt'])
-  sortBy?: string = 'position';
+  @IsIn(['name', 'slug', 'createdAt'])
+  sortBy?: string = 'createdAt';
 
   @ApiPropertyOptional({ enum: ['asc', 'desc'] })
   @IsOptional()
@@ -215,16 +211,13 @@ export class AttributeValueItemDto {
   @MaxLength(191)
   label?: string;
 
-  @ApiPropertyOptional({
-    example: '#FF0000',
-    description: 'Hex color for COLOR_PICKER type',
-  })
+  @ApiPropertyOptional({ example: '#FF0000' })
   @IsOptional()
   @IsString()
   @MaxLength(7)
   hexColor?: string;
 
-  @ApiPropertyOptional({ type: Object, example: { bn: { value: 'ইন্টেল' } } })
+  @ApiPropertyOptional({ type: Object })
   @IsOptional()
   @IsObject()
   translations?: Record<string, any>;
@@ -234,7 +227,7 @@ export class AddAttributeValuesDto {
   @ApiProperty({
     type: [AttributeValueItemDto],
     description: 'Values to add. Duplicates are skipped.',
-    example: [{ value: 'Intel' }, { value: 'AMD' }, { value: 'Qualcomm' }],
+    example: [{ value: 'Intel' }, { value: 'AMD' }],
   })
   @IsArray()
   @ValidateNested({ each: true })
@@ -267,12 +260,7 @@ export class UpdateAttributeValueItemDto {
   @MaxLength(7)
   hexColor?: string;
 
-  @ApiPropertyOptional({ example: 0 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(0)
-  position?: number;
+  // No position in AttributeValue schema
 
   @ApiPropertyOptional({ type: Object })
   @IsOptional()
@@ -291,19 +279,10 @@ export class UpdateAttributeValuesDto {
 export class ReorderAttributeValuesDto {
   @ApiProperty({
     type: [Object],
-    example: [
-      { id: 'clx_av_001', position: 0 },
-      { id: 'clx_av_002', position: 1 },
-    ],
+    example: [{ id: 'clx_av_001' }, { id: 'clx_av_002' }],
+    description:
+      'Order of value IDs (position not used - schema does not have position)',
   })
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(
-    () =>
-      class {
-        @IsString() @IsNotEmpty() id!: string;
-        @Type(() => Number) @IsInt() @Min(0) position!: number;
-      },
-  )
-  items!: { id: string; position: number }[];
+  items!: { id: string }[];
 }

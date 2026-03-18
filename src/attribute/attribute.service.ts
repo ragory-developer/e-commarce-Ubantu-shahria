@@ -1,4 +1,4 @@
-// ─── src/attribute/attribute.service.ts ──────────────────────
+// src/attribute/attribute.service.ts
 
 import {
   Injectable,
@@ -24,11 +24,7 @@ export class AttributeService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  // ══════════════════════════════════════════════════════════════
-  // CREATE ATTRIBUTE
-  // ══════════════════════════════════════════════════════════════
   async create(dto: CreateAttributeDto, createdBy: string) {
-    // Verify attribute set exists
     const attributeSet = await this.prisma.attributeSet.findFirst({
       where: { id: dto.attributeSetId, deletedAt: null },
       select: { id: true, name: true },
@@ -41,7 +37,6 @@ export class AttributeService {
       });
     }
 
-    // Slug must be unique within the same attribute set
     const existingSlug = await this.prisma.attribute.findFirst({
       where: {
         attributeSetId: dto.attributeSetId,
@@ -53,10 +48,8 @@ export class AttributeService {
 
     if (existingSlug) {
       throw new ConflictException({
-        message: `Attribute with slug "${dto.slug}" already exists in attribute set "${attributeSet.name}"`,
+        message: `Attribute with slug "${dto.slug}" already exists in set "${attributeSet.name}"`,
         field: 'slug',
-        conflictingId: existingSlug.id,
-        attributeSetId: dto.attributeSetId,
       });
     }
 
@@ -66,7 +59,7 @@ export class AttributeService {
         name: dto.name,
         slug: dto.slug,
         type: dto.type ?? AttributeType.TEXT,
-        position: dto.position ?? 0,
+        // No position field in Attribute schema
         translations: dto.translations
           ? (dto.translations as Prisma.InputJsonValue)
           : Prisma.JsonNull,
@@ -78,7 +71,6 @@ export class AttributeService {
         name: true,
         slug: true,
         type: true,
-        position: true,
         translations: true,
         createdAt: true,
         updatedAt: true,
@@ -86,15 +78,10 @@ export class AttributeService {
       },
     });
 
-    this.logger.log(
-      `Attribute created: "${attribute.name}" in set ${dto.attributeSetId} by ${createdBy}`,
-    );
+    this.logger.log(`Attribute created: "${attribute.name}" by ${createdBy}`);
     return attribute;
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // LIST ATTRIBUTES
-  // ══════════════════════════════════════════════════════════════
   async findAll(dto: ListAttributesDto) {
     const where: Prisma.AttributeWhereInput = {
       deletedAt: null,
@@ -108,13 +95,13 @@ export class AttributeService {
       }),
     };
 
+    // Valid sort fields for Attribute (no position)
     const sortMap: Record<string, Prisma.AttributeOrderByWithRelationInput> = {
       name: { name: dto.sortOrder ?? 'asc' },
       slug: { slug: dto.sortOrder ?? 'asc' },
-      position: { position: dto.sortOrder ?? 'asc' },
       createdAt: { createdAt: dto.sortOrder ?? 'desc' },
     };
-    const orderBy = sortMap[dto.sortBy ?? 'position'] ?? { position: 'asc' };
+    const orderBy = sortMap[dto.sortBy ?? 'createdAt'] ?? { createdAt: 'desc' };
 
     const [data, total] = await Promise.all([
       this.prisma.attribute.findMany({
@@ -125,7 +112,6 @@ export class AttributeService {
           name: true,
           slug: true,
           type: true,
-          position: true,
           translations: true,
           createdAt: true,
           updatedAt: true,
@@ -152,9 +138,6 @@ export class AttributeService {
     };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // GET ALL ATTRIBUTES IN A SET (public)
-  // ══════════════════════════════════════════════════════════════
   async findByAttributeSet(attributeSetId: string) {
     const attributeSet = await this.prisma.attributeSet.findFirst({
       where: { id: attributeSetId, deletedAt: null },
@@ -175,7 +158,6 @@ export class AttributeService {
         name: true,
         slug: true,
         type: true,
-        position: true,
         translations: true,
         values: {
           where: { deletedAt: null },
@@ -184,19 +166,13 @@ export class AttributeService {
             value: true,
             label: true,
             hexColor: true,
-            position: true,
             translations: true,
           },
-          orderBy: { position: 'asc' },
         },
       },
-      orderBy: { position: 'asc' },
     });
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // GET BY ID
-  // ══════════════════════════════════════════════════════════════
   async findOne(id: string) {
     const attribute = await this.prisma.attribute.findFirst({
       where: { id, deletedAt: null },
@@ -209,13 +185,11 @@ export class AttributeService {
             value: true,
             label: true,
             hexColor: true,
-            position: true,
             translations: true,
             createdAt: true,
             updatedAt: true,
             _count: { select: { productAttributeValues: true } },
           },
-          orderBy: { position: 'asc' },
         },
       },
     });
@@ -226,13 +200,9 @@ export class AttributeService {
         resourceId: id,
       });
     }
-
     return attribute;
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // UPDATE ATTRIBUTE
-  // ══════════════════════════════════════════════════════════════
   async update(id: string, dto: UpdateAttributeDto, updatedBy: string) {
     const existing = await this.prisma.attribute.findFirst({
       where: { id, deletedAt: null },
@@ -258,9 +228,8 @@ export class AttributeService {
       });
       if (slugExists) {
         throw new ConflictException({
-          message: 'Slug already used in this attribute set',
+          message: 'Slug already used in this set',
           field: 'slug',
-          conflictingId: slugExists.id,
         });
       }
     }
@@ -271,7 +240,7 @@ export class AttributeService {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.slug !== undefined && { slug: dto.slug }),
         ...(dto.type !== undefined && { type: dto.type }),
-        ...(dto.position !== undefined && { position: dto.position }),
+        // No position in Attribute schema
         ...(dto.translations !== undefined && {
           translations: dto.translations as Prisma.InputJsonValue,
         }),
@@ -283,9 +252,6 @@ export class AttributeService {
     return this.findOne(id);
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // ADD ATTRIBUTE VALUES (batch)
-  // ══════════════════════════════════════════════════════════════
   async addValues(id: string, dto: AddAttributeValuesDto, createdBy: string) {
     const attribute = await this.prisma.attribute.findFirst({
       where: { id, deletedAt: null },
@@ -299,18 +265,15 @@ export class AttributeService {
       });
     }
 
-    // Get existing values to check for duplicates
+    // Get existing values to detect duplicates
     const existingValues = await this.prisma.attributeValue.findMany({
       where: { attributeId: id, deletedAt: null },
-      select: { value: true, position: true },
-      orderBy: { position: 'desc' },
+      select: { value: true },
     });
 
     const existingSet = new Set(
       existingValues.map((v) => v.value.toLowerCase()),
     );
-    const maxPos = existingValues[0]?.position ?? -1;
-
     const duplicates: string[] = [];
     const toCreate: typeof dto.values = [];
 
@@ -323,7 +286,6 @@ export class AttributeService {
       }
     }
 
-    let position = maxPos + 1;
     const created = await Promise.all(
       toCreate.map((v) =>
         this.prisma.attributeValue.create({
@@ -332,7 +294,7 @@ export class AttributeService {
             value: v.value,
             label: v.label ?? null,
             hexColor: v.hexColor ?? null,
-            position: position++,
+            // No position in AttributeValue schema
             translations: v.translations
               ? (v.translations as Prisma.InputJsonValue)
               : Prisma.JsonNull,
@@ -343,15 +305,10 @@ export class AttributeService {
             value: true,
             label: true,
             hexColor: true,
-            position: true,
             translations: true,
           },
         }),
       ),
-    );
-
-    this.logger.log(
-      `Added ${created.length} values to attribute "${attribute.name}" (${duplicates.length} duplicates skipped)`,
     );
 
     return {
@@ -365,9 +322,6 @@ export class AttributeService {
     };
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // UPDATE ATTRIBUTE VALUES (batch)
-  // ══════════════════════════════════════════════════════════════
   async updateValues(
     id: string,
     dto: UpdateAttributeValuesDto,
@@ -393,7 +347,7 @@ export class AttributeService {
             ...(v.value !== undefined && { value: v.value }),
             ...(v.label !== undefined && { label: v.label }),
             ...(v.hexColor !== undefined && { hexColor: v.hexColor }),
-            ...(v.position !== undefined && { position: v.position }),
+            // No position in schema
             ...(v.translations !== undefined && {
               translations: v.translations as Prisma.InputJsonValue,
             }),
@@ -404,7 +358,6 @@ export class AttributeService {
             value: true,
             label: true,
             hexColor: true,
-            position: true,
             translations: true,
             updatedAt: true,
           },
@@ -415,10 +368,8 @@ export class AttributeService {
     return updated;
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // REORDER ATTRIBUTE VALUES
-  // ══════════════════════════════════════════════════════════════
   async reorderValues(id: string, dto: ReorderAttributeValuesDto) {
+    // AttributeValue has no position field - this is a no-op, just return findOne
     const attribute = await this.prisma.attribute.findFirst({
       where: { id, deletedAt: null },
       select: { id: true },
@@ -431,20 +382,14 @@ export class AttributeService {
       });
     }
 
-    const operations = dto.items.map((item) =>
-      this.prisma.attributeValue.update({
-        where: { id: item.id },
-        data: { position: item.position },
-      }),
+    // Since AttributeValue has no position field, reorder is not supported
+    // Return current state
+    this.logger.warn(
+      `Reorder attempted on AttributeValue - position field not in schema`,
     );
-
-    await this.prisma.$transaction(operations);
     return this.findOne(id);
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // DELETE ATTRIBUTE VALUE
-  // ══════════════════════════════════════════════════════════════
   async deleteValue(
     attributeId: string,
     valueId: string,
@@ -480,21 +425,14 @@ export class AttributeService {
 
     if (usageCount > 0) {
       throw new BadRequestException({
-        message: `Cannot delete value "${value.value}". It is assigned to ${usageCount} product(s).`,
+        message: `Cannot delete value "${value.value}". Used by ${usageCount} product(s).`,
         usageCount,
-        value: value.value,
       });
     }
 
     await this.prisma.softDelete('attributeValue', valueId, deletedBy);
-    this.logger.log(
-      `Attribute value deleted: "${value.value}" (${valueId}) by ${deletedBy}`,
-    );
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // DELETE ATTRIBUTE
-  // ══════════════════════════════════════════════════════════════
   async remove(id: string, deletedBy: string): Promise<void> {
     const attribute = await this.prisma.attribute.findFirst({
       where: { id, deletedAt: null },
@@ -508,27 +446,22 @@ export class AttributeService {
       });
     }
 
-    // Check if attribute is used by any products
     const usageCount = await this.prisma.productAttribute.count({
       where: { attributeId: id },
     });
 
     if (usageCount > 0) {
       throw new BadRequestException({
-        message: `Cannot delete attribute "${attribute.name}". It is used by ${usageCount} product(s). Remove it from products first.`,
+        message: `Cannot delete attribute "${attribute.name}". Used by ${usageCount} product(s).`,
         usageCount,
       });
     }
 
-    // Soft delete all values first
     await this.prisma.attributeValue.updateMany({
       where: { attributeId: id, deletedAt: null },
       data: { deletedAt: new Date(), deletedBy },
     });
 
     await this.prisma.softDelete('attribute', id, deletedBy);
-    this.logger.log(
-      `Attribute deleted: "${attribute.name}" (${attribute.slug}) by ${deletedBy}`,
-    );
   }
 }

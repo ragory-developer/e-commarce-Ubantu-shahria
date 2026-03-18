@@ -159,7 +159,7 @@ export class AdminService {
         firstName: dto.firstName.trim(),
         lastName: dto.lastName.trim(),
         email: dto.email.toLowerCase(),
-        phone: dto.phone ?? null,
+        phone: dto.phone ?? '',
         password: hashedPassword,
         role: dto.role ?? AdminRole.ADMIN,
         permissions: dto.permissions ?? [],
