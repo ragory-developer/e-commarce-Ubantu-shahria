@@ -1,9 +1,4 @@
 // ─── Prisma Service for NestJS (Prisma v6 Compatible) ────────
-// Production-grade PrismaService with:
-// - Soft delete extension (replaces middleware)
-// - Connection pooling logging
-// - Graceful shutdown
-// - Query logging in development
 
 import {
   Injectable,
@@ -11,7 +6,7 @@ import {
   OnModuleDestroy,
   Logger,
 } from '@nestjs/common';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 // ─── Soft Delete Models Configuration ─────────────────────────
 const SOFT_DELETE_MODELS = new Set([
@@ -58,7 +53,7 @@ export class PrismaService
       log:
         process.env.NODE_ENV === 'development'
           ? [
-              { emit: 'event', level: 'query' },
+              { emit: 'stdout', level: 'query' },
               { emit: 'stdout', level: 'info' },
               { emit: 'stdout', level: 'warn' },
               { emit: 'stdout', level: 'error' },
@@ -69,89 +64,72 @@ export class PrismaService
             ],
     });
 
-    // ═══════════════════════════════════════════════════════════
-    // Prisma v6: Extensions replace Middleware
-    // NOTE: Inside extension query functions, `this` is a special
-    // Prisma extension context — you cannot call this[model].update()
-    // directly. Instead, pass through the args and rely on the
-    // application layer to convert deletes to updates (via service calls).
-    // For soft delete on model.delete(), we intercept at the service level
-    // using the updateMany approach shown below.
-    // ═══════════════════════════════════════════════════════════
+    // ✅ Prisma v6 Extension (Safe)
     return this.$extends({
       name: 'softDelete',
       query: {
         $allModels: {
-          // ─── READ Operations: Auto-filter deletedAt ─────────────
           async findUnique({ model, args, query }) {
-            if (!SOFT_DELETE_MODELS.has(model)) {
-              return query(args);
-            }
-            // Restore the deletedAt filter
-            (args.where as any) = {
+            if (!SOFT_DELETE_MODELS.has(model)) return query(args);
+
+            args.where = {
               ...args.where,
               deletedAt: null,
-            };
+            } as any;
+
             return query(args);
           },
 
           async findFirst({ model, args, query }) {
-            if (!SOFT_DELETE_MODELS.has(model)) {
-              return query(args);
-            }
-            if (!args.where) args.where = {};
+            if (!SOFT_DELETE_MODELS.has(model)) return query(args);
+
+            args.where = args.where || {};
             if ((args.where as any).deletedAt === undefined) {
               (args.where as any).deletedAt = null;
             }
+
             return query(args);
           },
 
           async findMany({ model, args, query }) {
-            if (!SOFT_DELETE_MODELS.has(model)) {
-              return query(args);
-            }
-            if (!args) args = {} as any;
-            if (!args.where) args.where = {};
+            if (!SOFT_DELETE_MODELS.has(model)) return query(args);
+
+            args = args || {};
+            args.where = args.where || {};
             if ((args.where as any).deletedAt === undefined) {
               (args.where as any).deletedAt = null;
             }
+
             return query(args);
           },
 
           async count({ model, args, query }) {
-            if (!SOFT_DELETE_MODELS.has(model)) {
-              return query(args);
-            }
-            if (!args) args = {} as any;
-            if (!args.where) args.where = {};
+            if (!SOFT_DELETE_MODELS.has(model)) return query(args);
+
+            args = args || {};
+            args.where = args.where || {};
             if ((args.where as any).deletedAt === undefined) {
               (args.where as any).deletedAt = null;
             }
+
             return query(args);
           },
-
-          // ─── DELETE Operations: Not intercepted ───────────────────
-          // Prisma v6 extensions cannot safely redirect delete to update.
-          // Instead, use the softDelete() helper method in service layer:
-          //   await this.
-          // ('product', id, deletedByAdminId)
-          // instead of:
-          //   await this.prisma.product.delete({ where: { id } })
         },
       },
     }) as unknown as this;
   }
 
+  // ══════════════════════════════════════════════════════════════
+  // ✅ FIXED (NO $on)
+  // ══════════════════════════════════════════════════════════════
   async onModuleInit() {
-    if (process.env.NODE_ENV === 'development') {
-      (this as any).$on('query', (e: Prisma.QueryEvent) => {
-        this.logger.debug(`Query: ${e.query}`);
-        this.logger.debug(`Duration: ${e.duration}ms`);
-      });
+    try {
+      await this.$connect();
+      this.logger.log('✅ Database connected successfully');
+    } catch (error) {
+      this.logger.error('❌ Database connection failed', error);
+      throw error;
     }
-
-    await this.$connect();
-    this.logger.log('✅ Database connected successfully');
   }
 
   async onModuleDestroy() {
@@ -159,9 +137,7 @@ export class PrismaService
     this.logger.log('Database disconnected');
   }
 
-  // ─── Soft delete helper — USE THIS in all services ───────────
-  // Instead of: prisma.product.delete({ where: { id } })
-  // Use:        prisma.softDelete('product', id, deletedByAdminId)
+  // ─── Soft delete helper ──────────────────────────────────────
   async softDelete(
     model: string,
     id: string,
@@ -176,7 +152,7 @@ export class PrismaService
     });
   }
 
-  // ─── Restore a soft-deleted record ─────────────────────────
+  // ─── Restore ────────────────────────────────────────────────
   async restore(model: string, id: string): Promise<void> {
     await (this as any)[model].update({
       where: { id },
@@ -187,7 +163,7 @@ export class PrismaService
     });
   }
 
-  // ─── Hard delete — use ONLY for GDPR "right to be forgotten" ──
+  // ─── Hard delete (use carefully) ─────────────────────────────
   async hardDelete(model: string, id: string): Promise<void> {
     const client = new PrismaClient();
     try {
@@ -197,7 +173,7 @@ export class PrismaService
     }
   }
 
-  // ─── Purge old soft-deleted records (run via cron) ──────────
+  // ─── Purge old records ───────────────────────────────────────
   async purgeDeletedRecords(
     model: string,
     olderThanDays: number = 90,
@@ -212,9 +188,11 @@ export class PrismaService
           deletedAt: { not: null, lt: cutoffDate },
         },
       });
+
       this.logger.log(
         `Purged ${result.count} ${model} records older than ${olderThanDays} days`,
       );
+
       return result.count;
     } finally {
       await client.$disconnect();
