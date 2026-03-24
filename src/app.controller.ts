@@ -13,7 +13,7 @@ export class AppController {
   constructor(private readonly appService: AppService) {}
 
   /**
-   * GET /api/v1/
+   * GET /api/v2/
    * Health check endpoint
    */
   @Public() // No auth required
@@ -23,7 +23,7 @@ export class AppController {
   }
 
   /**
-   * GET /api/v1/health
+   * GET /api/v2/health
    * Detailed health check
    */
   @Public()

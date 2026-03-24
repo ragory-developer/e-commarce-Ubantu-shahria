@@ -21,6 +21,7 @@ import {
   UpgradeGuestDto,
   CustomerOrdersQueryDto,
   CustomerWalletQueryDto,
+  CustomerCreateReturnDto,
 } from './dto';
 import { AUTH_CONFIG, AUTH_ERROR } from '../auth/auth.constants';
 
@@ -548,6 +549,106 @@ export class CustomerService {
         hasPrevPage: page > 1,
       },
     };
+  }
+
+  // ── Request a return ─────────────────────────────────────────────
+  async createReturn(customerId: string, dto: CustomerCreateReturnDto) {
+    // 1. Validate order belongs to customer and is delivered
+    const order = await this.prisma.order.findFirst({
+      where: { id: dto.orderId, customerId, deletedAt: null },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        deliveredAt: true,
+        products: {
+          select: {
+            id: true,
+            productName: true,
+            qty: true,
+            unitPrice: true,
+            lineTotal: true,
+          },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'DELIVERED') {
+      throw new BadRequestException('Only DELIVERED orders can be returned');
+    }
+
+    // 2. Return window check (default 7 days, reads from settings if available)
+    if (order.deliveredAt) {
+      const windowDays = 7;
+      const cutoff = new Date(
+        order.deliveredAt.getTime() + windowDays * 86_400_000,
+      );
+      if (new Date() > cutoff) {
+        throw new BadRequestException(
+          `Return window of ${windowDays} days has passed`,
+        );
+      }
+    }
+
+    // 3. Check for duplicate pending return on same order
+    const existing = await this.prisma.orderReturn.findFirst({
+      where: {
+        orderId: dto.orderId,
+        customerId,
+        status: { in: ['REQUESTED', 'APPROVED', 'PICKUP_SCHEDULED'] },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (existing)
+      throw new BadRequestException(
+        'A pending return request already exists for this order',
+      );
+
+    // 4. Validate each item exists in order and qty ≤ ordered qty
+    const orderProductMap = new Map(order.products.map((p) => [p.id, p]));
+    const items = dto.items.map((item) => {
+      const op = orderProductMap.get(item.orderProductId);
+      if (!op)
+        throw new BadRequestException(
+          `Order product ${item.orderProductId} not found`,
+        );
+      if (item.qty > op.qty)
+        throw new BadRequestException(
+          `Cannot return more than ordered qty for "${op.productName}"`,
+        );
+      return {
+        orderProductId: item.orderProductId,
+        productName: op.productName,
+        qty: item.qty,
+        unitPrice: op.unitPrice,
+      };
+    });
+
+    const ret = await this.prisma.orderReturn.create({
+      data: {
+        orderId: dto.orderId,
+        customerId,
+        items: items as any,
+        reason: dto.reason,
+        reasonDetail: dto.reasonDetail ?? null,
+        evidenceImages: dto.evidenceImages ? (dto.evidenceImages as any) : null,
+        status: 'REQUESTED',
+      },
+      select: {
+        id: true,
+        orderId: true,
+        reason: true,
+        reasonDetail: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+
+    this.logger.log(
+      `Customer ${customerId} requested return for order ${dto.orderId}`,
+    );
+    return ret;
   }
 
   // ══════════════════════════════════════════════════════════════

@@ -6,6 +6,8 @@ import { OtpModule } from '../otp/otp.module';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TokenService } from '../auth/token.service';
+import { StockReservationModule } from 'src/stock-reservation/stock-reservation.module';
+import { StockReservationService } from '../stock-reservation/stock-reservation.service';
 
 @Module({
   imports: [
@@ -13,6 +15,7 @@ import { TokenService } from '../auth/token.service';
     PrismaModule,
     OtpModule,
     ConfigModule,
+    StockReservationModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -22,6 +25,6 @@ import { TokenService } from '../auth/token.service';
       }),
     }),
   ],
-  providers: [CleanupTask, TokenService],
+  providers: [CleanupTask, TokenService, StockReservationService],
 })
 export class TasksModule {}

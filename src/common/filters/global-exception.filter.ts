@@ -20,7 +20,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     let status: HttpStatus = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
-    let errors: any = null;
+    let errors: unknown = null;
+
+    // ✅ Added (safe enhancement)
+    const requestId = request.headers['x-request-id'] || null;
+    const isProduction = process.env.NODE_ENV === 'production';
 
     // ─── NestJS HTTP Exceptions ──────────
     if (exception instanceof HttpException) {
@@ -30,14 +34,18 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       if (typeof exceptionResponse === 'string') {
         message = exceptionResponse;
       } else if (typeof exceptionResponse === 'object') {
-        const res = exceptionResponse as any;
-        message = res.message || exception.message;
-        errors = res.errors || null;
+        const res = exceptionResponse as Record<string, any>;
 
-        // class-validator returns array of messages
+        // ✅ Validation error (array format)
         if (Array.isArray(res.message)) {
+          status = HttpStatus.BAD_REQUEST;
           message = 'Validation failed';
           errors = res.message;
+        } else {
+          message =
+            typeof res.message === 'string' ? res.message : exception.message;
+
+          errors = res.errors ?? null;
         }
       }
     }
@@ -78,10 +86,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message = exception.message;
     }
 
-    // Log server errors
+    // ✅ Hide internal error details in production
+    if (isProduction && status === HttpStatus.INTERNAL_SERVER_ERROR) {
+      message = 'Something went wrong';
+    }
+
+    // ✅ Improved logging (more readable)
     if (status >= HttpStatus.INTERNAL_SERVER_ERROR) {
       this.logger.error(
-        `${request.method} ${request.url} — ${status}`,
+        `[${request.method}] ${request.url} → ${status} | ${message}`,
         exception instanceof Error ? exception.stack : String(exception),
       );
     }
@@ -92,6 +105,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message,
       errors,
       path: request.url,
+      requestId, // ✅ added (optional but powerful)
       timestamp: new Date().toISOString(),
     });
   }

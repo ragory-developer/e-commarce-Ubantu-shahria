@@ -953,8 +953,58 @@ export class ProductService {
   // ══════════════════════════════════════════════════════════════
   // SEARCH (for dropdowns)
   // ══════════════════════════════════════════════════════════════
+  // async search(query: string, limit = 20) {
+  //   if (!query || query.trim().length < 2) return [];
+
+  //   const products = await this.prisma.product.findMany({
+  //     where: {
+  //       deletedAt: null,
+  //       isActive: true,
+  //       OR: [
+  //         { name: { contains: query, mode: 'insensitive' } },
+  //         { sku: { contains: query, mode: 'insensitive' } },
+  //       ],
+  //     },
+  //     select: {
+  //       id: true,
+  //       name: true,
+  //       slug: true,
+  //       sku: true,
+  //       price: true,
+  //       specialPrice: true,
+  //       inStock: true,
+  //       images: true,
+  //     },
+  //     take: Math.min(limit, 50),
+  //     orderBy: { name: 'asc' },
+  //   });
+
+  //   // Attach main image
+  //   return Promise.all(
+  //     products.map(async (p) => {
+  //       const mainImage = await this.prisma.entityMedia.findFirst({
+  //         where: { entityType: 'Product', entityId: p.id, isMain: true },
+  //         include: MEDIA_INCLUDE,
+  //       });
+  //       return { ...p, mainImage };
+  //     }),
+  //   );
+  // }
   async search(query: string, limit = 20) {
     if (!query || query.trim().length < 2) return [];
+
+    // Track the search term (fire-and-forget)
+    this.prisma.searchTerm
+      .upsert({
+        where: { term: query.toLowerCase().trim() },
+        create: {
+          term: query.toLowerCase().trim(),
+          count: 1,
+          lastUsedAt: new Date(),
+        },
+        update: { count: { increment: 1 }, lastUsedAt: new Date() },
+      })
+      .catch(() => {}); // non-blocking
 
     const products = await this.prisma.product.findMany({
       where: {
@@ -979,7 +1029,6 @@ export class ProductService {
       orderBy: { name: 'asc' },
     });
 
-    // Attach main image
     return Promise.all(
       products.map(async (p) => {
         const mainImage = await this.prisma.entityMedia.findFirst({
@@ -2201,6 +2250,182 @@ export class ProductService {
         pageCount: Math.ceil(total / take) || 1,
       },
     };
+  }
+
+  /**
+   * Validate one or more products for checkout.
+   * Returns fresh prices, active status, stock check.
+   * Called by CheckoutService before creating an order.
+   */
+  async validateForCheckout(
+    items: Array<{ productId: string; variantId?: string | null; qty: number }>,
+  ): Promise<{
+    valid: boolean;
+    lines: Array<{
+      productId: string;
+      variantId: string | null;
+      productName: string;
+      productSlug: string;
+      productSku: string | null;
+      productImage: any;
+      unitPrice: number;
+      qty: number;
+      lineTotal: number;
+      variationsSnapshot: any;
+    }>;
+    errors: Array<{ productId: string; message: string }>;
+  }> {
+    const lines: any[] = [];
+    const errors: Array<{ productId: string; message: string }> = [];
+
+    for (const item of items) {
+      const product = await this.prisma.product.findFirst({
+        where: { id: item.productId, deletedAt: null, isActive: true },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          sku: true,
+          price: true,
+          specialPrice: true,
+          specialPriceType: true,
+          specialPriceStart: true,
+          specialPriceEnd: true,
+          inStock: true,
+          manageStock: true,
+          qty: true,
+          images: true,
+          taxClassId: true,
+        },
+      });
+
+      if (!product) {
+        errors.push({
+          productId: item.productId,
+          message: 'Product not found or inactive',
+        });
+        continue;
+      }
+
+      if (!product.inStock) {
+        errors.push({
+          productId: item.productId,
+          message: `"${product.name}" is out of stock`,
+        });
+        continue;
+      }
+
+      if (item.variantId) {
+        const variant = await this.prisma.productVariant.findFirst({
+          where: {
+            id: item.variantId,
+            productId: item.productId,
+            deletedAt: null,
+            isActive: true,
+          },
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            price: true,
+            specialPrice: true,
+            specialPriceType: true,
+            specialPriceStart: true,
+            specialPriceEnd: true,
+            inStock: true,
+            manageStock: true,
+            qty: true,
+            reservedQty: true,
+            images: true,
+          },
+        });
+
+        if (!variant) {
+          errors.push({
+            productId: item.productId,
+            message: 'Variant not found or inactive',
+          });
+          continue;
+        }
+        if (!variant.inStock) {
+          errors.push({
+            productId: item.productId,
+            message: `Variant "${variant.name}" is out of stock`,
+          });
+          continue;
+        }
+        if (variant.manageStock && variant.qty != null) {
+          const free = variant.qty - variant.reservedQty;
+          if (free < item.qty) {
+            errors.push({
+              productId: item.productId,
+              message: `Only ${Math.max(0, free)} of "${variant.name}" available`,
+            });
+            continue;
+          }
+        }
+
+        const now = new Date();
+        const useSpecial =
+          variant.specialPrice != null &&
+          (!variant.specialPriceStart || variant.specialPriceStart <= now) &&
+          (!variant.specialPriceEnd || variant.specialPriceEnd >= now);
+        const unitPrice = (
+          useSpecial ? variant.specialPrice! : (variant.price ?? product.price!)
+        ).toNumber();
+
+        lines.push({
+          productId: item.productId,
+          variantId: item.variantId,
+          productName: `${product.name} - ${variant.name}`,
+          productSlug: product.slug,
+          productSku: variant.sku ?? product.sku,
+          productImage: variant.images ?? product.images,
+          unitPrice,
+          qty: item.qty,
+          lineTotal: parseFloat((unitPrice * item.qty).toFixed(4)),
+          variationsSnapshot: null,
+          taxClassId: product.taxClassId,
+        });
+      } else {
+        if (
+          product.manageStock &&
+          product.qty != null &&
+          product.qty < item.qty
+        ) {
+          errors.push({
+            productId: item.productId,
+            message: `Only ${product.qty} of "${product.name}" available`,
+          });
+          continue;
+        }
+
+        const now = new Date();
+        const useSpecial =
+          product.specialPrice != null &&
+          (!product.specialPriceStart || product.specialPriceStart <= now) &&
+          (!product.specialPriceEnd || product.specialPriceEnd >= now);
+        const unitPrice = (
+          useSpecial ? product.specialPrice! : product.price!
+        ).toNumber();
+
+        lines.push({
+          productId: item.productId,
+          variantId: null,
+          productName: product.name,
+          productSlug: product.slug,
+          productSku: product.sku,
+          productImage: product.images,
+          unitPrice,
+          qty: item.qty,
+          lineTotal: parseFloat((unitPrice * item.qty).toFixed(4)),
+          variationsSnapshot: null,
+          taxClassId: product.taxClassId,
+        });
+      }
+    }
+
+    return { valid: errors.length === 0, lines, errors };
   }
 
   // ══════════════════════════════════════════════════════════════

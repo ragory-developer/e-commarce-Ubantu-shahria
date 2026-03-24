@@ -67,6 +67,20 @@ import { AdminReturnsModule } from './admin-return/admin-return.module';
 // import { AdminWalletService } from './admin-wallet/admin-wallet.service';
 // import { AdminWalletController } from './admin-wallet/admin-wallet.controller';
 // import { AdminWalletModule } from './admin-wallet/admin-wallet.module';
+import { StockReservationService } from './stock-reservation/stock-reservation.service';
+import { StockReservationController } from './stock-reservation/stock-reservation.controller';
+import { StockReservationModule } from './stock-reservation/stock-reservation.module';
+import { WalletService } from './wallet/wallet.service';
+import { WalletModule } from './wallet/wallet.module';
+import { AdminWalletService } from './admin-wallet/admin-wallet.service';
+import { AdminWalletController } from './admin-wallet/admin-wallet.controller';
+import { AdminWalletModule } from './admin-wallet/admin-wallet.module';
+import { SettingsService } from './settings/settings.service';
+import { SettingsController } from './settings/settings.controller';
+import { SettingsModule } from './settings/settings.module';
+import { CurrencyRateService } from './currency-rate/currency-rate.service';
+import { CurrencyRateController } from './currency-rate/currency-rate.controller';
+import { CurrencyRateModule } from './currency-rate/currency-rate.module';
 
 @Module({
   imports: [
@@ -112,6 +126,11 @@ import { AdminReturnsModule } from './admin-return/admin-return.module';
     CourierModule,
     // CheckoutModule,
     AdminReturnsModule,
+    StockReservationModule,
+    WalletModule,
+    AdminWalletModule,
+    SettingsModule,
+    CurrencyRateModule,
     // AdminWalletModule,
   ],
 
@@ -131,6 +150,10 @@ import { AdminReturnsModule } from './admin-return/admin-return.module';
     // CheckoutController,
     // AdminReturnController,
     AdminReturnsController,
+    StockReservationController,
+    AdminWalletController,
+    SettingsController,
+    CurrencyRateController,
     // AdminWalletController,
   ],
 
@@ -162,6 +185,11 @@ import { AdminReturnsModule } from './admin-return/admin-return.module';
     // CheckoutService,
     // AdminReturnService,
     AdminReturnsService,
+    StockReservationService,
+    WalletService,
+    AdminWalletService,
+    SettingsService,
+    CurrencyRateService,
     // AdminWalletService,
   ],
 })

@@ -21,25 +21,33 @@ const SOFT_DELETE_MODELS = new Set([
   'AttributeSet',
   'Attribute',
   'AttributeValue',
-  'Option',
-  'OptionValue',
   'Variation',
   'VariationValue',
   'Order',
+  'OrderPackage',
+  'OrderReturn',
   'Transaction',
+  'Refund',
   'TaxClass',
   'TaxRate',
+  'CurrencyRate',
   'Coupon',
-  'Review',
+  'Promotion',
   'FlashSale',
   'FlashSaleProduct',
-  'CurrencyRate',
-  'Setting',
-  'SearchTerm',
-  'File',
+  'Courier',
+  'DeliveryZone',
   'DeliveryRider',
-  'OrderPackage',
+  'Media',
+  'Review',
+  'CustomerNote',
+  'Setting',
+  'ApiKey',
+  'ProductQuestion',
+  'ProductAnswer',
 ]);
+
+const SOFT_DELETE_NO_BY = new Set(['ShippingRule', 'Division']);
 
 @Injectable()
 export class PrismaService
@@ -92,7 +100,10 @@ export class PrismaService
           },
 
           async findMany({ model, args, query }) {
-            if (!SOFT_DELETE_MODELS.has(model)) return query(args);
+            const isSoftDel =
+              SOFT_DELETE_MODELS.has(model) || SOFT_DELETE_NO_BY.has(model);
+
+            if (isSoftDel) return query(args);
 
             args = args || {};
             args.where = args.where || {};
@@ -143,11 +154,14 @@ export class PrismaService
     id: string,
     deletedBy?: string,
   ): Promise<void> {
+    const hasDeletedBy =
+      SOFT_DELETE_MODELS.has(model) && !SOFT_DELETE_NO_BY.has(model);
+
     await (this as any)[model].update({
       where: { id },
       data: {
         deletedAt: new Date(),
-        ...(deletedBy ? { deletedBy } : {}),
+        ...(deletedBy && hasDeletedBy ? { deletedBy } : {}),
       },
     });
   }

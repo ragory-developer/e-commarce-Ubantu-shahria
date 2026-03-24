@@ -31,6 +31,7 @@ import {
   UpgradeGuestDto,
   CustomerOrdersQueryDto,
   CustomerWalletQueryDto,
+  CustomerCreateReturnDto,
 } from './dto';
 
 @ApiTags('Customer — Account')
@@ -442,5 +443,28 @@ export class CustomerController {
     const deviceId = (user as any).deviceId;
     await this.customerService.revokeAllOtherDevices(user.id, deviceId);
     return { message: 'All other devices revoked', data: null };
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // return - product
+  // ════════════════════════════════════════════════════════════
+  @Post('returns')
+  @ApiOperation({
+    summary: 'Request a return for a delivered order',
+    description:
+      'Order must be DELIVERED. Return window is 7 days from delivery. ' +
+      'Only one pending return per order is allowed.',
+  })
+  @ApiResponse({ status: 201, description: 'Return request submitted' })
+  @ApiResponse({
+    status: 400,
+    description: 'Order not delivered / window expired / duplicate',
+  })
+  async createReturn(
+    @Body() dto: CustomerCreateReturnDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    const data = await this.customerService.createReturn(user.id, dto);
+    return { message: 'Return request submitted', data };
   }
 }

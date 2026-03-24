@@ -163,6 +163,61 @@ export class AddressService {
     });
   }
 
+  // ── Get delivery zone for an address (used by checkout) ─────────
+  async getDeliveryZoneForAddress(addressId: string, customerId: string) {
+    const address = await this.prisma.address.findFirst({
+      where: { id: addressId, customerId, deletedAt: null },
+      select: {
+        id: true,
+        areaId: true,
+        area: {
+          select: {
+            id: true,
+            name: true,
+            isActive: true,
+            deliveryZone: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                isActive: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!address) throw new NotFoundException('Address not found');
+
+    if (!address.areaId || !address.area) {
+      return { deliverable: false, reason: 'Address has no area assigned' };
+    }
+
+    if (!address.area.isActive) {
+      return { deliverable: false, reason: 'Area is not active' };
+    }
+
+    if (!address.area.deliveryZone) {
+      return {
+        deliverable: false,
+        reason: 'No delivery zone covers this area',
+      };
+    }
+
+    if (!address.area.deliveryZone.isActive) {
+      return {
+        deliverable: false,
+        reason: 'Delivery zone is currently inactive',
+      };
+    }
+
+    return {
+      deliverable: true,
+      deliveryZone: address.area.deliveryZone,
+    };
+  }
+
   // ──────────────────────────────────────────────────────────────
   // SET DEFAULT
   // ──────────────────────────────────────────────────────────────

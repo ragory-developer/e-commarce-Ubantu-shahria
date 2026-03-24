@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReturnStatus, Prisma } from '@prisma/client';
+import { WalletService } from '../wallet/wallet.service';
 
 // ─── DTOs ─────────────────────────────────────────────────────
 
@@ -44,7 +45,10 @@ export class ListReviewsAdminDto {
 export class AdminReturnsService {
   private readonly logger = new Logger(AdminReturnsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly walletService: WalletService,
+  ) {}
 
   // ══════════════════════════════════════════════════════════════
   // RETURNS
@@ -238,18 +242,33 @@ export class AdminReturnsService {
     }
 
     // Credit wallet if refund method is wallet
+    // if (
+    //   ret.refundMethod === 'WALLET' &&
+    //   ret.customerId &&
+    //   ret.walletCreditAmount &&
+    //   ret.walletCreditAmount.toNumber() > 0
+    // ) {
+    //   await this.creditWallet(
+    //     ret.customerId,
+    //     ret.walletCreditAmount.toNumber(),
+    //     id,
+    //     adminId,
+    //   );
+    // }
     if (
       ret.refundMethod === 'WALLET' &&
       ret.customerId &&
       ret.walletCreditAmount &&
       ret.walletCreditAmount.toNumber() > 0
     ) {
-      await this.creditWallet(
-        ret.customerId,
-        ret.walletCreditAmount.toNumber(),
-        id,
-        adminId,
-      );
+      await this.walletService.credit({
+        customerId: ret.customerId,
+        amount: ret.walletCreditAmount.toNumber(),
+        type: 'CREDIT_REFUND',
+        returnId: id,
+        description: `Refund for return #${id}`,
+        createdBy: adminId,
+      });
     }
 
     await this.prisma.orderReturn.update({

@@ -5,6 +5,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 
 declare const module: any;
 
@@ -58,6 +59,8 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Swagger only when not in production or explicitly enabled
   if (nodeEnv !== 'production' || process.env.ENABLE_SWAGGER === 'true') {
