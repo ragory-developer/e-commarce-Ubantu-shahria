@@ -72,55 +72,58 @@ export class PrismaService
             ],
     });
 
-    // ✅ Prisma v6 Extension (Safe)
     return this.$extends({
       name: 'softDelete',
       query: {
         $allModels: {
-          async findUnique({ model, args, query }) {
-            if (!SOFT_DELETE_MODELS.has(model)) return query(args);
-
-            args.where = {
-              ...args.where,
-              deletedAt: null,
-            } as any;
-
+          // ─── findUnique (SAFE: DO NOT MODIFY) ─────────────────
+          async findUnique({ query, args }) {
             return query(args);
           },
 
+          // ─── findFirst ───────────────────────────────────────
           async findFirst({ model, args, query }) {
             if (!SOFT_DELETE_MODELS.has(model)) return query(args);
 
+            args = args || {};
             args.where = args.where || {};
+
             if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null;
+              args.where = {
+                AND: [args.where, { deletedAt: null }],
+              };
             }
 
             return query(args);
           },
 
+          // ─── findMany ────────────────────────────────────────
           async findMany({ model, args, query }) {
-            const isSoftDel =
-              SOFT_DELETE_MODELS.has(model) || SOFT_DELETE_NO_BY.has(model);
-
-            if (isSoftDel) return query(args);
+            if (!SOFT_DELETE_MODELS.has(model)) return query(args);
 
             args = args || {};
             args.where = args.where || {};
+
             if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null;
+              args.where = {
+                AND: [args.where, { deletedAt: null }],
+              };
             }
 
             return query(args);
           },
 
+          // ─── count ───────────────────────────────────────────
           async count({ model, args, query }) {
             if (!SOFT_DELETE_MODELS.has(model)) return query(args);
 
             args = args || {};
             args.where = args.where || {};
+
             if ((args.where as any).deletedAt === undefined) {
-              (args.where as any).deletedAt = null;
+              args.where = {
+                AND: [args.where, { deletedAt: null }],
+              };
             }
 
             return query(args);
@@ -130,9 +133,10 @@ export class PrismaService
     }) as unknown as this;
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // ✅ FIXED (NO $on)
-  // ══════════════════════════════════════════════════════════════
+  // ────────────────────────────────────────────────────────────
+  // Lifecycle
+  // ────────────────────────────────────────────────────────────
+
   async onModuleInit() {
     try {
       await this.$connect();
@@ -148,7 +152,10 @@ export class PrismaService
     this.logger.log('Database disconnected');
   }
 
-  // ─── Soft delete helper ──────────────────────────────────────
+  // ────────────────────────────────────────────────────────────
+  // Soft Delete Helpers
+  // ────────────────────────────────────────────────────────────
+
   async softDelete(
     model: string,
     id: string,
@@ -166,7 +173,6 @@ export class PrismaService
     });
   }
 
-  // ─── Restore ────────────────────────────────────────────────
   async restore(model: string, id: string): Promise<void> {
     await (this as any)[model].update({
       where: { id },
@@ -177,7 +183,6 @@ export class PrismaService
     });
   }
 
-  // ─── Hard delete (use carefully) ─────────────────────────────
   async hardDelete(model: string, id: string): Promise<void> {
     const client = new PrismaClient();
     try {
@@ -187,7 +192,6 @@ export class PrismaService
     }
   }
 
-  // ─── Purge old records ───────────────────────────────────────
   async purgeDeletedRecords(
     model: string,
     olderThanDays: number = 90,

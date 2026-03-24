@@ -150,7 +150,17 @@ export class AddressService {
     }
 
     // Remove updatedBy - not in Address schema
-    const { ...updateData } = dto;
+    const updateData: Record<string, unknown> = {};
+    if (dto.label !== undefined) updateData.label = dto.label;
+    if (dto.fullName !== undefined) updateData.fullName = dto.fullName;
+    if (dto.phone !== undefined) updateData.phone = dto.phone;
+    if (dto.addressLine !== undefined) updateData.addressLine = dto.addressLine;
+    if (dto.divisionId !== undefined) updateData.divisionId = dto.divisionId;
+    if (dto.cityId !== undefined) updateData.cityId = dto.cityId;
+    if (dto.areaId !== undefined) updateData.areaId = dto.areaId;
+    if (dto.postalCode !== undefined) updateData.postalCode = dto.postalCode;
+    if (dto.country !== undefined) updateData.country = dto.country;
+    if (dto.isDefault !== undefined) updateData.isDefault = dto.isDefault;
 
     return this.prisma.address.update({
       where: { id },
